@@ -91,11 +91,11 @@ export function buildSystemPrompt(
   }
 
   // Current game state
-  // try {
-  //   parts.push(buildStateContext(bot));
-  // } catch {
-  //   parts.push('\n## Current Game State\nUnable to read game state.');
-  // }
+  try {
+    parts.push(buildStateContext(bot));
+  } catch {
+    parts.push('\n## Current Game State\nUnable to read game state.');
+  }
 
   return parts.join('\n');
 }
