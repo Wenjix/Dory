@@ -1,367 +1,247 @@
-# Dory - AI Gaming Companion System
+# Dory - AI Gaming Companion
 
-> **Global AI Game Hack 2026** - An AI-powered gaming companion that plays with you through voice, performs in-game actions, has unique personalities, and generates structures in Minecraft.
+> **Global AI Game Hack 2026** — An AI companion that plays Minecraft with you through voice, performs in-game actions, plans multi-step tasks, and builds structures.
 
-## Work in Progress 🚧
+## What It Does
 
-Currently building the foundation...
+Talk to Dory through voice and she will control a Minecraft bot for you:
 
-## Overview
-
-Dory is a multi-agent AI system that provides intelligent gaming companions with:
-- 🎮 **In-game Actions** - Navigate, collect, craft, build, and more
-- 🗣️ **Voice Interaction** - Natural conversation via speech-to-speech
-- 🧠 **Personalities** - Distinct characters with unique traits and play styles
-- 🏗️ **Structure Generation** - Create buildings from text descriptions
-- 📊 **Dashboard** - Web interface for configuration and monitoring
-- 🤖 **Multi-step Planning** - Execute complex tasks autonomously
+- **Voice conversation** — speak naturally, Dory listens and responds via speech
+- **In-game actions** — follow, collect resources, craft items, build structures
+- **Multi-step planning** — "gather wood and craft me a crafting table" just works
+- **Building** — walls, pillars, floors placed where you're looking
+- **A2A architecture** — voice agent talks to game agent over HTTP for clean separation
 
 ## Architecture
 
 ```
-┌─────────────────┐         ┌─────────────────┐
-│   Dashboard     │◄────────┤   Voice Agent   │
-│  (Frontend)     │         │   (Neocortex)   │
-└────────┬────────┘         └────────┬────────┘
-         │                           │
-         │ WebSocket/HTTP            │ HTTP/A2A
-         │                           │
-         └───────────┬───────────────┘
-                     ▼
-            ┌────────────────┐
-            │   Game Agent   │
-            │  (Mineflayer)  │
-            └───────┬────────┘
-                    │
-         ┌──────────┼──────────┐
-         ▼          ▼          ▼
-    ┌────────┐ ┌────────┐ ┌──────────────┐
-    │ Tools  │ │Planning│ │Structure Gen │
-    │Registry│ │ Engine │ │  (Mistral)   │
-    └────────┘ └────────┘ └──────────────┘
+                    Voice (WebRTC)
+  Player ◄───────────────────────────► Voice Agent (LiveKit)
+                                            │
+                                            │ HTTP / A2A
+                                            ▼
+                                       Game Agent
+                                       (Express + LLM)
+                                            │
+                                      ┌─────┼─────┐
+                                      ▼     ▼     ▼
+                                   Tools  Planning  Bot
+                                            │
+                                            ▼
+                                     Minecraft Server
 ```
 
-## Monorepo Structure
+| Service | Port | Description |
+|---------|------|-------------|
+| `game-agent` | 3000 | Minecraft bot control, LLM reasoning, tool execution |
+| `voice-agent` | 4001 | LiveKit voice pipeline (STT → LLM → TTS), A2A tools |
+
+## Prerequisites
+
+- **Node.js 20+**
+- **pnpm 8+** — `npm install -g pnpm`
+- **Minecraft Java Edition** server running (1.20+)
+- **LiveKit Cloud** account (free) — [livekit.io](https://livekit.io)
+- **API keys** for: LLM provider, Deepgram (STT), ElevenLabs (TTS)
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+git clone <repo-url>
+cd dory
+pnpm install
+```
+
+### 2. Configure environment
+
+Each service has its own `.env`. Copy the examples and fill in your keys:
+
+```bash
+cp services/game-agent/.env.example services/game-agent/.env
+cp services/voice-agent/.env.example services/voice-agent/.env
+```
+
+**Game Agent** (`services/game-agent/.env`):
+```bash
+GAME_AGENT_PORT=3000
+
+# LLM — pick one provider: mistral, openai, or anthropic
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-...
+
+# Optional: set a specific model
+# ANTHROPIC_MODEL=claude-sonnet-4-20250514
+# OPENAI_MODEL=gpt-4o
+# MISTRAL_MODEL=mistral-large-latest
+```
+
+**Voice Agent** (`services/voice-agent/.env`):
+```bash
+PORT=4001
+
+# LiveKit (required)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
+
+# STT — Deepgram
+DEEPGRAM_API_KEY=...
+
+# TTS — ElevenLabs
+ELEVEN_API_KEY=...
+
+# LLM for voice conversation (OpenAI-compatible)
+LLM_API_KEY=...
+LLM_BASE_URL=https://api.groq.com/openai/v1  # or https://api.openai.com/v1
+LLM_MODEL=llama-3.3-70b-versatile
+
+# Game Agent URL (A2A)
+GAME_AGENT_URL=http://localhost:3000
+```
+
+### 3. Start everything
+
+```bash
+# Start all services (builds shared package, then starts game-agent + voice-agent)
+pnpm dev
+```
+
+Or start services individually:
+
+```bash
+pnpm dev:game    # Game agent only (port 3000)
+pnpm dev:voice   # Voice agent only (port 4001)
+```
+
+### 4. Connect & play
+
+1. **Start your Minecraft server** (Java Edition, offline mode recommended for testing)
+
+2. **Create a bot session** — either via the test console or voice:
+   - Open `http://localhost:3000/` and use the test console (`services/game-agent/test-console.html`)
+   - Or open the voice test page (`services/voice-agent/test-voice.html`) and say "join the game"
+
+3. **Talk to Dory** — open `services/voice-agent/test-voice.html`, connect, and start speaking:
+   - "Follow me"
+   - "Collect some wood"
+   - "Craft a crafting table"
+   - "Build a pillar where I'm looking"
+
+4. **Text commands** — you can also use the WebSocket console at `ws://localhost:3000/ws`:
+   ```
+   ask <sessionId> collect 5 oak logs
+   ask <sessionId> build a cobblestone wall here
+   ```
+
+## Project Structure
 
 ```
 dory/
 ├── services/
-│   ├── game-agent/      # Minecraft bot + AI reasoning
-│   ├── voice-agent/     # Voice interaction service
-│   ├── structure-gen/   # Structure generation service
-│   └── dashboard/       # React frontend
+│   ├── game-agent/          # Minecraft bot + LLM reasoning
+│   │   ├── src/
+│   │   │   ├── a2a/         # Agent card + A2A message handler
+│   │   │   ├── actions/     # Building, vision, helpers
+│   │   │   ├── agent/       # Message handler, system prompt
+│   │   │   ├── bot/         # Bot wrapper + manager
+│   │   │   ├── llm/         # Provider-agnostic LLM client
+│   │   │   ├── planning/    # Multi-step plan engine
+│   │   │   └── tools/       # Tool registry + executor
+│   │   └── test-console.html
+│   └── voice-agent/         # Voice conversation + A2A bridge
+│       ├── src/
+│       │   ├── agent/       # LiveKit conversational agent
+│       │   ├── routes/      # Room token endpoint
+│       │   └── tools/       # Game agent HTTP tools
+│       └── test-voice.html
 ├── packages/
-│   └── shared/          # Common types & utilities
-└── package.json         # Root workspace config
+│   └── shared/              # Common types, logger, utilities
+├── turbo.json               # Turborepo task config
+├── pnpm-workspace.yaml      # Workspace definition
+└── package.json             # Root scripts
 ```
+
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start all services (game-agent + voice-agent) |
+| `pnpm dev:game` | Start game agent only |
+| `pnpm dev:voice` | Start voice agent only |
+| `pnpm build` | Build all packages |
+| `pnpm typecheck` | Run TypeScript checks |
+| `pnpm clean` | Remove all dist/ and node_modules |
 
 ## Tech Stack
 
-- **Monorepo:** pnpm workspaces + Turborepo
-- **Runtime:** Node.js 20+ with TypeScript
-- **Game Bot:** mineflayer (Minecraft bot framework)
-- **LLM:** Mistral AI Large 3 (reasoning & tool calling)
-- **Voice:** Neocortex (STT + TTS via ElevenLabs backend)
-- **Structure Gen:** LLM code generation → JavaScript → Block placement
-- **Database:** MongoDB (sessions, messages, memory, embeddings)
-- **Frontend:** Next.js 14 + React 18
+| Component | Technology |
+|-----------|-----------|
+| Monorepo | pnpm workspaces + Turborepo |
+| Runtime | Node.js 20+ / TypeScript |
+| Game bot | mineflayer + pathfinder + collectblock |
+| LLM (game) | Anthropic Claude / OpenAI / Mistral (switchable) |
+| LLM (voice) | Any OpenAI-compatible API (Groq, OpenAI, etc.) |
+| Voice | LiveKit Agents SDK |
+| STT | Deepgram Nova 3 |
+| TTS | ElevenLabs |
+| VAD | Silero |
+| A2A | HTTP REST (agent cards + JSON) |
 
-## Quick Start
+## API Endpoints
 
-### Prerequisites
-- Node.js 20+
-- pnpm 8+
-- MongoDB (local or Atlas free tier)
-- Minecraft Java Edition server (1.20+)
-- API keys (Mistral, Neocortex)
+### Game Agent (port 3000)
 
-### Installation
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/.well-known/agent-card.json` | Agent card (A2A discovery) |
+| POST | `/api/sessions` | Create bot session |
+| GET | `/api/sessions` | List active sessions |
+| GET | `/api/sessions/:id` | Get session info |
+| DELETE | `/api/sessions/:id` | Disconnect bot |
+| POST | `/api/sessions/:id/message` | Send message (LLM reasoning) |
+| POST | `/api/a2a/message` | A2A: receive command from voice agent |
+| GET | `/api/a2a/sessions` | A2A: list sessions with details |
+| WS | `/ws` | WebSocket interactive console |
 
-```bash
-# Clone the repository
-git clone <repo-url>
-cd dory
+### Voice Agent (port 4001)
 
-# Install dependencies
-pnpm install
-
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your API keys
-```
-
-### Development
-
-```bash
-# Start all services
-pnpm dev
-
-# Start individual packages
-pnpm --filter game-agent dev
-pnpm --filter voice-agent dev
-pnpm --filter dashboard dev
-pnpm --filter structure-gen dev
-
-# Build all packages
-pnpm build
-
-# Run tests
-pnpm test
-```
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# Minecraft Server
-MINECRAFT_HOST=localhost
-MINECRAFT_PORT=25565
-MINECRAFT_USERNAME=DoryBot
-
-# Mistral AI
-MISTRAL_API_KEY=your-key-here
-
-# Neocortex
-NEOCORTEX_API_KEY=your-key-here
-NEOCORTEX_CHARACTER_ID=your-character-id
-
-# Database
-DATABASE_PATH=./data/dory.db
-
-# Ports
-GAME_AGENT_PORT=3000
-VOICE_AGENT_PORT=4001
-DASHBOARD_PORT=5001
-STRUCTURE_GEN_PORT=8000
-```
-
-### Redeem Hackathon Credits
-
-1. **Mistral AI** ($15):
-   - Visit: https://mistral-credits-app-production.up.railway.app/h/supercell-game-hack/
-   - Password: `GamingHack`
-
-2. **Neocortex** (2000 credits):
-   - Go to Settings > Redeem Code
-   - Enter code: `AIGAMEHACK2026`
-
-## Usage
-
-### API Endpoints (Game Agent)
-
-```bash
-# Create a new bot session
-POST /api/sessions
-{
-  "serverHost": "localhost",
-  "serverPort": 25565,
-  "botName": "DoryBot",
-  "personality": "builder"
-}
-
-# Send a message to the bot
-POST /api/sessions/:id/message
-{
-  "message": "Follow me and collect some wood"
-}
-
-# Get session status
-GET /api/sessions/:id
-
-# Disconnect bot
-DELETE /api/sessions/:id
-
-# Subscribe to events (SSE)
-GET /api/sessions/:id/events
-```
-
-### Example Interactions
-
-```javascript
-// Simple commands (direct tool calling)
-"Follow me"
-"Stop following"
-"Collect 10 oak logs"
-"Come to me"
-
-// Complex tasks (planning engine)
-"Gather wood and craft me a crafting table"
-"Build a small wooden house here"
-"Find some iron and make me a pickaxe"
-
-// Structure generation
-"Generate a medieval tower and build it here"
-"Create a statue of a dragon"
-"Build me a simple bridge across this gap"
-```
-
-## Personalities
-
-Pre-configured personality types:
-
-- **Builder Bob** 🏗️ - Methodical, patient, loves construction projects
-- **Explorer Emma** 🧭 - Adventurous, curious, always moving
-- **Combat Carl** ⚔️ - Aggressive, protective, tactical fighter
-- **Helper Holly** 💖 - Supportive, cheerful, always encouraging
-
-Custom personalities can be created via the dashboard.
-
-## Features
-
-### ✅ Core Features (MVP)
-- [x] Minecraft bot connection and control
-- [x] Natural language command processing
-- [x] Basic actions (move, collect, craft, build)
-- [x] Personality system
-- [x] Voice interaction
-- [x] Web dashboard
-
-### 🚧 In Progress
-- [ ] Multi-step task planning
-- [ ] Structure generation
-- [ ] Advanced error recovery
-- [ ] Learning system
-
-### 🎯 Planned
-- [ ] Multi-agent coordination
-- [ ] World generation (Reactor API)
-- [ ] Animated avatars (X&Immersion)
-- [ ] 3D asset generation (Hyper3D)
-- [ ] User profiles and preferences
-
-## Development
-
-### Adding a New Tool
-
-```typescript
-// packages/game-agent/src/tools/registry.ts
-{
-  type: "function",
-  function: {
-    name: "your_tool_name",
-    description: "What this tool does",
-    parameters: {
-      type: "object",
-      properties: {
-        param1: { type: "string", description: "Parameter description" }
-      },
-      required: ["param1"]
-    }
-  }
-}
-
-// packages/game-agent/src/tools/executor.ts
-case 'your_tool_name':
-  return await yourToolHandler(bot, params);
-```
-
-### Adding a New Personality
-
-```typescript
-// packages/game-agent/src/personalities/types.ts
-export const personalities = {
-  your_personality: {
-    name: "Your Name",
-    traits: ["trait1", "trait2"],
-    communicationStyle: "How they speak",
-    playStyle: "How they play",
-    systemPrompt: "Additional LLM instructions"
-  }
-}
-```
-
-### Project Structure Patterns
-
-Following patterns from readyplayerx:
-- **Bot Wrapper**: High-level API around mineflayer
-- **Action Helpers**: Reusable low-level utilities
-- **Tool Registry**: LLM-discoverable function calling
-- **Event Bus**: Pub/sub for game events
-- **Planning Engine**: Multi-step task orchestration
-- **Session Isolation**: One bot instance per session
-
-## Testing
-
-```bash
-# Run all tests
-pnpm test
-
-# Run tests for specific package
-pnpm --filter game-agent test
-
-# Integration tests
-pnpm test:integration
-
-# Watch mode
-pnpm test:watch
-```
-
-## Deployment
-
-```bash
-# Build for production
-pnpm build
-
-# Start production services
-pnpm start
-
-# Docker (future)
-docker-compose up
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| POST | `/api/room-token` | Generate LiveKit room token |
 
 ## Troubleshooting
 
-### Bot can't connect to Minecraft server
-- Check server is running and accessible
-- Verify `MINECRAFT_HOST` and `MINECRAFT_PORT`
-- Ensure bot username is not already online
-- Check authentication mode (offline vs Microsoft)
+### "pnpm dev" fails with build errors
+```bash
+# Rebuild the shared package first
+pnpm build:shared
+# Then retry
+pnpm dev
+```
 
-### Voice commands not working
-- Verify Neocortex API key is valid
-- Check Neocortex character is configured
-- Ensure voice-agent service is running
-- Test with text commands first
+### Bot can't connect to Minecraft
+- Make sure your Minecraft server is running and set to offline mode
+- Default config is `localhost:25565` — adjust in the create session call if different
+- Check the bot username isn't already online
 
-### Structure generation fails
-- Check Mistral API credits
-- Verify prompt is clear and specific
-- Ensure bot has sufficient materials
-- Check for obstructions at placement location
+### Voice agent connects but doesn't hear me
+- Verify `DEEPGRAM_API_KEY` and `ELEVEN_API_KEY` are set
+- Make sure your browser has microphone permissions
+- Check browser console for WebRTC errors
 
-### LLM not calling tools
-- Verify tool registry format is correct
-- Check LLM system prompt includes tool instructions
-- Ensure tool descriptions are clear
-- Try simpler commands first
-
-## Contributing
-
-1. Create a feature branch
-2. Make changes with clear commits
-3. Test thoroughly
-4. Submit pull request
+### Game commands from voice return "no active bot session"
+- Create a bot session first (via test console or say "join the game")
+- Verify game-agent is running on port 3000
+- Check `GAME_AGENT_URL` in voice-agent `.env`
 
 ## License
 
-MIT License - see LICENSE file
-
-## Acknowledgments
-
-- **Supercell** - Hosting Global AI Game Hack 2026
-- **Mistral AI** - LLM API and hackathon credits
-- **Neocortex** - Voice NPC platform and credits
-- **PrismarineJS** - Mineflayer framework
-- **readyplayerx** - Architecture inspiration
-
-## Contact & Support
-
-- Discord: Check hackathon channels (#neocortex, #mistral)
-- Issues: GitHub Issues
-- Docs: See `/docs` folder
+MIT
 
 ---
 
-Built with ❤️ for Global AI Game Hack 2026
+Built for Global AI Game Hack 2026

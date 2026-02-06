@@ -2,17 +2,15 @@
   "name": "dory",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Gaming Companion System",
-  "workspaces": [
-    "services/*",
-    "packages/*"
-  ],
+  "description": "Dory - AI Gaming Companion System",
   "scripts": {
     "dev": "turbo run dev",
+    "dev:game": "turbo run dev --filter=@dory/game-agent",
+    "dev:voice": "turbo run dev --filter=@dory/voice-agent",
     "build": "turbo run build",
-    "lint": "turbo run lint",
-    "clean": "turbo run clean && rm -rf node_modules .turbo",
-    "typecheck": "turbo run typecheck"
+    "build:shared": "turbo run build --filter=@dory/shared",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules .turbo"
   },
   "devDependencies": {
     "turbo": "^2.0.0",

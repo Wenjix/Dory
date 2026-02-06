@@ -7,6 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
     "download": "node --import tsx/esm node_modules/@livekit/agents/dist/cli.js download-files"
   },
   "dependencies": {
