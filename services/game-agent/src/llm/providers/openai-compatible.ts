@@ -76,7 +76,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       throw new Error(`${this.name} API error ${response.status}: ${errorBody}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     const choice = data.choices?.[0];
 
     if (!choice) {

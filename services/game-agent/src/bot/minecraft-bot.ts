@@ -142,24 +142,118 @@ export class MinecraftBot {
   }
 
   /**
-   * Collect blocks of a specific type
+   * Collect blocks of a specific type.
+   * Finds nearby blocks first, then collects them one by one.
+   * Based on readyplayerx approach: findBlocks → get Block objects → collect.
    */
   async collectBlock(blockType: string, count: number): Promise<{ state: boolean; message: string }> {
     if (!this.mcData) {
       return { state: false, message: 'Minecraft data not loaded' };
     }
 
-    const blockId = this.mcData.blocksByName[blockType]?.id;
-    if (!blockId) {
+    // Resolve block type aliases (common names → actual block names)
+    const blockTypes = resolveBlockAliases(blockType);
+
+    // Get block IDs for all aliases
+    const blockIds: number[] = [];
+    for (const bt of blockTypes) {
+      const id = this.mcData.blocksByName[bt]?.id;
+      if (id !== undefined) {
+        blockIds.push(id);
+      }
+    }
+
+    if (blockIds.length === 0) {
       return { state: false, message: `Unknown block type: ${blockType}` };
     }
 
+    let collected = 0;
+
     try {
-      // Use mineflayer-collectblock plugin
-      await (this.bot as any).collectBlock.collect(blockId, { count });
-      return { state: true, message: `Collected ${count}x ${blockType}` };
+      for (let i = 0; i < count; i++) {
+        // Find nearby blocks (search up to 64 blocks away)
+        const positions = this.bot.findBlocks({
+          matching: blockIds,
+          maxDistance: 64,
+          count: 1,
+        });
+
+        if (positions.length === 0) {
+          if (collected > 0) {
+            return { state: true, message: `Collected ${collected}/${count}x ${blockType} (no more found nearby)` };
+          }
+          return { state: false, message: `No ${blockType} found within 64 blocks` };
+        }
+
+        // Get the actual Block object (this is what the plugin needs)
+        const block = this.bot.blockAt(positions[0]);
+        if (!block) {
+          continue;
+        }
+
+        logger.info(`[${this.sessionId}] Collecting ${block.name} at (${block.position.x}, ${block.position.y}, ${block.position.z})`);
+
+        // Try collectblock plugin first
+        try {
+          await (this.bot as any).collectBlock.collect(block);
+          collected++;
+        } catch (pluginError) {
+          // Fallback: navigate to block, dig it, pick up items
+          logger.warn(`[${this.sessionId}] collectBlock plugin failed, using manual dig: ${(pluginError as Error).message}`);
+          try {
+            // Navigate close to the block
+            const goal = new goals.GoalNear(
+              block.position.x,
+              block.position.y,
+              block.position.z,
+              2
+            );
+            this.bot.pathfinder.setGoal(goal);
+
+            // Wait to arrive (simple timeout-based)
+            await new Promise<void>((resolve) => {
+              const check = setInterval(() => {
+                const dist = this.bot.entity.position.distanceTo(block.position);
+                if (dist < 4) {
+                  clearInterval(check);
+                  resolve();
+                }
+              }, 250);
+              setTimeout(() => {
+                clearInterval(check);
+                resolve();
+              }, 15000);
+            });
+
+            // Equip best tool for the block
+            try {
+              await (this.bot as any).tool.equipForBlock(block);
+            } catch {
+              // No tool plugin or no suitable tool - that's ok
+            }
+
+            // Dig the block
+            await this.bot.dig(block);
+            collected++;
+
+            // Brief wait to pick up drops
+            await new Promise((r) => setTimeout(r, 500));
+          } catch (manualError) {
+            logger.warn(`[${this.sessionId}] Manual dig also failed: ${(manualError as Error).message}`);
+          }
+        }
+      }
+
+      if (collected === 0) {
+        return { state: false, message: `Failed to collect any ${blockType}` };
+      }
+
+      return { state: true, message: `Collected ${collected}x ${blockType}` };
     } catch (error) {
-      return { state: false, message: `Failed to collect: ${(error as Error).message}` };
+      if (collected > 0) {
+        return { state: true, message: `Collected ${collected}/${count}x ${blockType} (then error: ${(error as Error).message})` };
+      }
+      return { state: false, message: `Failed to collect ${blockType}: ${(error as Error).message}` };
     }
   }
 
@@ -204,4 +298,39 @@ export class MinecraftBot {
   get isInterrupted() {
     return this.interruptFlag;
   }
+}
+
+/**
+ * Resolve common block name aliases to actual Minecraft block names.
+ * e.g. "wood" → ["oak_log", "birch_log", "spruce_log", ...]
+ */
+function resolveBlockAliases(blockType: string): string[] {
+  const aliases: Record<string, string[]> = {
+    // Wood aliases
+    wood: ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log'],
+    log: ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log'],
+    plank: ['oak_planks', 'birch_planks', 'spruce_planks'],
+    planks: ['oak_planks', 'birch_planks', 'spruce_planks'],
+
+    // Stone aliases
+    stone: ['stone', 'cobblestone'],
+    cobble: ['cobblestone'],
+
+    // Ore aliases - include deepslate variants
+    coal: ['coal_ore', 'deepslate_coal_ore'],
+    iron: ['iron_ore', 'deepslate_iron_ore'],
+    gold: ['gold_ore', 'deepslate_gold_ore'],
+    diamond: ['diamond_ore', 'deepslate_diamond_ore'],
+    redstone: ['redstone_ore', 'deepslate_redstone_ore'],
+    lapis: ['lapis_ore', 'deepslate_lapis_ore'],
+    copper: ['copper_ore', 'deepslate_copper_ore'],
+    emerald: ['emerald_ore', 'deepslate_emerald_ore'],
+
+    // Dirt aliases
+    dirt: ['dirt', 'grass_block'],
+    grass: ['grass_block'],
+    sand: ['sand', 'red_sand'],
+  };
+
+  return aliases[blockType.toLowerCase()] || [blockType];
 }

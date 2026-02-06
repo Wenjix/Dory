@@ -140,12 +140,26 @@
         <strong>Status:</strong> <span id="statusText">Connecting...</span>
     </div>
 
+    <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <label style="color: #00ccff; font-weight: bold; min-width: 70px;">Bot Name:</label>
+        <input type="text" id="botNameInput" placeholder="DoryBot" value="DoryBot"
+               style="width: 120px; padding: 8px; background: #2a2a2a; border: 1px solid #00ccff; border-radius: 4px; color: #00ccff; font-family: inherit; font-size: 14px;">
+        <label style="color: #00ccff;">Host:</label>
+        <input type="text" id="hostInput" placeholder="localhost" value="localhost"
+               style="width: 110px; padding: 8px; background: #2a2a2a; border: 1px solid #00ccff; border-radius: 4px; color: #00ccff; font-family: inherit; font-size: 14px;">
+        <label style="color: #00ccff;">Port:</label>
+        <input type="text" id="portInput" placeholder="25565" value="25565"
+               style="width: 70px; padding: 8px; background: #2a2a2a; border: 1px solid #00ccff; border-radius: 4px; color: #00ccff; font-family: inherit; font-size: 14px;">
+        <button class="quick-command" onclick="createSession()" style="margin: 0; border-color: #00ccff; color: #00ccff; font-weight: bold;">Create Bot Session</button>
+    </div>
+
     <div class="session-input" style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
         <label for="sessionId" style="color: #00ff00;">Session ID:</label>
-        <input type="text" id="sessionId" placeholder="Enter session ID here..." 
+        <input type="text" id="sessionId" placeholder="Enter session ID or create a bot above..." 
                style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #00ff00; border-radius: 4px; color: #00ff00; font-family: inherit; font-size: 14px;">
         <button class="quick-command" onclick="testSession()" style="margin: 0;">Test Connection</button>
         <button class="quick-command" onclick="loadSessions()" style="margin: 0;">Load Sessions</button>
+        <button class="quick-command" onclick="disconnectSession()" style="margin: 0; border-color: #ff4444; color: #ff4444;">Disconnect</button>
     </div>
 
     <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
@@ -321,6 +335,60 @@
                 });
             }
         });
+
+        async function createSession() {
+            const botName = document.getElementById('botNameInput').value.trim() || 'DoryBot';
+            const host = document.getElementById('hostInput').value.trim() || 'localhost';
+            const port = parseInt(document.getElementById('portInput').value.trim()) || 25565;
+
+            addOutput(`Creating bot session: ${botName} → ${host}:${port}...`, 'info');
+
+            try {
+                const resp = await fetch('http://localhost:3000/api/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serverHost: host, serverPort: port, botName: botName }),
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    addOutput('Bot session created!', 'success');
+                    addOutput('  Session ID: ' + data.sessionId, 'success');
+                    addOutput('  Bot name: ' + botName, 'info');
+                    document.getElementById('sessionId').value = data.sessionId;
+                } else {
+                    addOutput('Failed to create session: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                addOutput('Request failed: ' + err.message, 'error');
+            }
+        }
+
+        async function disconnectSession() {
+            const sessionId = getSessionId();
+            if (!sessionId) {
+                addOutput('Please enter a Session ID first!', 'error');
+                return;
+            }
+
+            addOutput('Disconnecting session ' + sessionId + '...', 'info');
+
+            try {
+                const resp = await fetch('http://localhost:3000/api/sessions/' + sessionId, {
+                    method: 'DELETE',
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    addOutput('Session disconnected: ' + data.message, 'success');
+                    document.getElementById('sessionId').value = '';
+                } else {
+                    addOutput('Failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                addOutput('Request failed: ' + err.message, 'error');
+            }
+        }
 
         function testSession() {
             const sessionId = getSessionId();

@@ -129,7 +129,7 @@ export class AnthropicProvider implements LLMProvider {
       throw new Error(`Anthropic API error ${response.status}: ${errorBody}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
 
     // Parse Claude's response content blocks back into our unified format
     const message: ChatMessage = {

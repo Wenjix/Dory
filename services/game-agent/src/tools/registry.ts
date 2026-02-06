@@ -34,16 +34,16 @@ const followPlayer: ToolDefinition = {
   function: {
     name: 'follow_player',
     description:
-      'Start continuously following a player. The bot will keep following them until told to stop.',
+      'Start continuously following a player. The bot will keep following them until told to stop. If no username is given, follows the nearest player.',
     parameters: {
       type: 'object',
       properties: {
         username: {
           type: 'string',
-          description: 'The username of the player to follow',
+          description: 'The username of the player to follow. If not provided, follows the nearest player.',
         },
       },
-      required: ['username'],
+      required: [],
     },
   },
 };

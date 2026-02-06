@@ -53,7 +53,11 @@ const handlers: Record<string, ToolHandler> = {
   // ── Movement ──────────────────────────────────────────────────────────────
 
   follow_player: async (bot, args) => {
-    const { username } = args;
+    // Use provided username, or fallback to nearest player
+    const username = args.username || findNearestPlayerName(bot);
+    if (!username) {
+      return { success: false, message: 'No player found nearby to follow' };
+    }
     const success = await bot.followPlayer(username);
     return {
       success,
