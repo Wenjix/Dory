@@ -2,11 +2,22 @@ import { createServer } from './server';
 import { config } from './config';
 import { createLogger } from '@dory/shared';
 import { setupWebSocket } from './websocket';
+import { createLLMClient, setLLMClient } from './llm';
 
 const logger = createLogger('game-agent');
 
 async function main() {
   try {
+    // Initialize LLM client
+    try {
+      const llm = createLLMClient();
+      setLLMClient(llm);
+      logger.info(`LLM ready: ${llm.name} / ${llm.model}`);
+    } catch (error) {
+      logger.warn(`LLM not configured: ${(error as Error).message}`);
+      logger.warn('Bot will work without AI reasoning. Set API keys in .env to enable.');
+    }
+
     const app = createServer();
     
     const server = app.listen(config.port, () => {

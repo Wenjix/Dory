@@ -148,12 +148,19 @@
         <button class="quick-command" onclick="loadSessions()" style="margin: 0;">Load Sessions</button>
     </div>
 
+    <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
+        <label style="color: #ffaa00; font-weight: bold;">Ask AI:</label>
+        <input type="text" id="askInput" placeholder='e.g. "follow me", "build a pillar here", "what do you see?"'
+               style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #ffaa00; border-radius: 4px; color: #ffaa00; font-family: inherit; font-size: 14px;">
+        <button class="quick-command" onclick="askAI()" style="margin: 0; border-color: #ffaa00; color: #ffaa00;">Send to AI</button>
+    </div>
+
     <div class="quick-commands">
         <button class="quick-command" onclick="sendCommand('help')">Help</button>
         <button class="quick-command" onclick="quickCommand('inventory')">Inventory</button>
         <button class="quick-command" onclick="quickCommand('position')">Position</button>
         <button class="quick-command" onclick="quickCommand('looking')">Bot's View</button>
-        <button class="quick-command" onclick="quickCommand('playerlooking')">🎯 Player's View</button>
+        <button class="quick-command" onclick="quickCommand('playerlooking')">Player's View</button>
         <button class="quick-command" onclick="quickCommand('scan {sid} 32')">Scan Area</button>
         <button class="quick-command" onclick="quickCommand('follow')">Follow Me</button>
         <button class="quick-command" onclick="quickCommand('stop')">Stop</button>
@@ -225,14 +232,26 @@
                     break;
 
                 case 'result':
-                    addOutput('Result (' + data.command + '):', 'result');
-                    addOutput(JSON.stringify(data.data, null, 2), 'result');
+                    // Special formatting for AI responses
+                    if (data.command === 'ask' && data.data) {
+                        addOutput('🤖 Dory: ' + data.data.response, 'success');
+                        if (data.data.toolsExecuted && data.data.toolsExecuted.length > 0) {
+                            addOutput('  Tools used (' + data.data.toolsExecuted.length + '):', 'info');
+                            data.data.toolsExecuted.forEach(t => {
+                                addOutput('    → ' + t.name + '(' + JSON.stringify(t.args) + ') = ' + t.result, 'info');
+                            });
+                        }
+                        addOutput('  [LLM calls: ' + data.data.llmCalls + ']', 'info');
+                    } else {
+                        addOutput('Result (' + data.command + '):', 'result');
+                        addOutput(JSON.stringify(data.data, null, 2), 'result');
+                    }
                     
                     // Auto-fill session ID if we got sessions list
                     if (data.command === 'sessions' && data.data.sessions && data.data.sessions.length > 0) {
                         const firstSession = data.data.sessions[0];
                         document.getElementById('sessionId').value = firstSession;
-                        addOutput('💡 Auto-filled first session ID: ' + firstSession, 'info');
+                        addOutput('Auto-filled first session ID: ' + firstSession, 'info');
                     }
                     break;
 
@@ -274,6 +293,34 @@
             const fullCmd = cmd.replace(/{sid}/g, sessionId) + (cmd.includes('{sid}') ? '' : ' ' + sessionId);
             sendCommand(fullCmd);
         }
+
+        function askAI() {
+            const sessionId = getSessionId();
+            const askInput = document.getElementById('askInput');
+            const message = askInput.value.trim();
+            if (!sessionId) {
+                addOutput('⚠ Please enter a Session ID first!', 'error');
+                return;
+            }
+            if (!message) {
+                addOutput('⚠ Please type a message for the AI!', 'error');
+                return;
+            }
+            sendCommand('ask ' + sessionId + ' ' + message);
+            askInput.value = '';
+        }
+
+        // Allow Enter key in ask input
+        document.addEventListener('DOMContentLoaded', () => {
+            const askInput = document.getElementById('askInput');
+            if (askInput) {
+                askInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && askInput.value.trim()) {
+                        askAI();
+                    }
+                });
+            }
+        });
 
         function testSession() {
             const sessionId = getSessionId();

@@ -3,6 +3,8 @@ import cors from 'cors';
 import { createLogger, SessionConfig } from '@dory/shared';
 import { BotManager } from './bot/bot-manager';
 import { v4 as uuidv4 } from 'uuid';
+import { handleMessage } from './agent';
+import { getLLMClient } from './llm';
 
 const logger = createLogger('game-agent-server');
 
@@ -127,6 +129,45 @@ export function createServer(): Express {
       count: sessions.length,
       sessions,
     });
+  });
+
+  // Send message to bot (AI reasoning)
+  app.post('/api/sessions/:sessionId/message', async (req: Request, res: Response) => {
+    const { sessionId } = req.params;
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ success: false, error: 'Missing "message" in request body' });
+      return;
+    }
+
+    const bot = BotManager.getBot(sessionId);
+    if (!bot) {
+      res.status(404).json({ success: false, error: 'Session not found' });
+      return;
+    }
+
+    const llm = getLLMClient();
+    if (!llm) {
+      res.status(503).json({ success: false, error: 'LLM not configured. Set API keys in .env' });
+      return;
+    }
+
+    try {
+      const result = await handleMessage(sessionId, bot, llm, message);
+      res.json({
+        success: true,
+        response: result.response,
+        toolsExecuted: result.toolsExecuted,
+        llmCalls: result.llmCalls,
+      });
+    } catch (error) {
+      logger.error(`Message handling failed for session ${sessionId}:`, error);
+      res.status(500).json({
+        success: false,
+        error: `AI error: ${(error as Error).message}`,
+      });
+    }
   });
 
   // 404 handler

@@ -6,6 +6,8 @@ import * as helpers from './actions/helpers';
 import * as vision from './actions/vision';
 import * as building from './actions/building';
 import * as playerBuilding from './actions/player-building';
+import { handleMessage } from './agent';
+import { getLLMClient } from './llm';
 
 const logger = createLogger('websocket');
 
@@ -51,6 +53,7 @@ export function setupWebSocket(server: Server) {
       type: 'info',
       message: 'Connected to Dory Game Agent WebSocket',
       availableCommands: [
+        'ask <sessionId> <message...> - Send message to AI (reasoning + tools)',
         'follow <sessionId>',
         'stop <sessionId>',
         'goto <sessionId> <x> <y> <z>',
@@ -125,6 +128,7 @@ async function executeCommand(ws: WebSocket, command: string, args: any[]) {
         ws.send(JSON.stringify({
           type: 'help',
           commands: {
+            'ask <sessionId> <message...>': 'Send natural language message to AI (uses LLM + tools)',
             'follow <sessionId>': 'Follow the nearest player',
             'stop <sessionId>': 'Stop all current actions',
             'goto <sessionId> <x> <y> <z>': 'Navigate to coordinates',
@@ -473,6 +477,45 @@ async function executeCommand(ws: WebSocket, command: string, args: any[]) {
             position: { x: pos.x, y: pos.y, z: pos.z },
             health: bot.health,
             food: bot.food,
+          },
+        }));
+        break;
+      }
+
+      case 'ask':
+      case 'msg':
+      case 'say': {
+        const sessionId = allArgs[0];
+        const userMessage = allArgs.slice(1).join(' ');
+
+        if (!userMessage) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Usage: ask <sessionId> <message...>' }));
+          return;
+        }
+
+        const bot = BotManager.getBot(sessionId);
+        if (!bot) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Session not found' }));
+          return;
+        }
+
+        const llm = getLLMClient();
+        if (!llm) {
+          ws.send(JSON.stringify({ type: 'error', error: 'LLM not configured. Set API keys in .env' }));
+          return;
+        }
+
+        // Send "thinking" indicator
+        ws.send(JSON.stringify({ type: 'info', message: `Thinking... (${llm.name}/${llm.model})` }));
+
+        const result = await handleMessage(sessionId, bot, llm, userMessage);
+        ws.send(JSON.stringify({
+          type: 'result',
+          command: 'ask',
+          data: {
+            response: result.response,
+            toolsExecuted: result.toolsExecuted,
+            llmCalls: result.llmCalls,
           },
         }));
         break;
