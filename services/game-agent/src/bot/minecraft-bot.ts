@@ -65,7 +65,8 @@ export class MinecraftBot {
   }
 
   /**
-   * Stop all current actions and clear pathfinding
+   * Stop all current actions and clear pathfinding.
+   * Sets interruptFlag so long-running tasks (like collectBlock) can check it and bail out.
    */
   async stop(): Promise<void> {
     this.interruptFlag = true;
@@ -78,22 +79,48 @@ export class MinecraftBot {
     // Clear control states
     await this.bot.clearControlStates();
     
-    // Stop collectblock
+    // Stop collectblock plugin
     if ((this.bot as any).collectBlock) {
-      (this.bot as any).collectBlock.cancelTask();
+      try {
+        (this.bot as any).collectBlock.cancelTask();
+      } catch {
+        // Ignore if no task to cancel
+      }
     }
 
-    this.interruptFlag = false;
+    // Stop digging if in progress
+    try {
+      this.bot.stopDigging();
+    } catch {
+      // Ignore if not digging
+    }
+
+    // NOTE: interruptFlag stays true - it's the responsibility of
+    // the interrupted action to reset it when it sees the flag and stops.
+    // If no action is running, reset it after a brief delay.
+    setTimeout(() => {
+      this.interruptFlag = false;
+    }, 500);
   }
 
   /**
-   * Follow a player
+   * Follow a player. Also interrupts any running action (like collectBlock).
    */
   async followPlayer(username: string): Promise<boolean> {
     const player = this.bot.players[username];
     if (!player || !player.entity) {
       return false;
     }
+
+    // Interrupt any running action first
+    this.interruptFlag = true;
+
+    // Cancel collectblock if running
+    try {
+      if ((this.bot as any).collectBlock) {
+        (this.bot as any).collectBlock.cancelTask();
+      }
+    } catch { /* ignore */ }
 
     const goal = new goals.GoalFollow(player.entity, 2);
     this.bot.pathfinder.setGoal(goal, true);
@@ -143,13 +170,18 @@ export class MinecraftBot {
 
   /**
    * Collect blocks of a specific type.
-   * Finds nearby blocks first, then collects them one by one.
-   * Based on readyplayerx approach: findBlocks → get Block objects → collect.
+   * - Finds NEAREST blocks first (sorted by distance)
+   * - Respects count limit (capped at MAX_COLLECT)
+   * - Checks interruptFlag each iteration so stop() / follow() can cancel it
    */
   async collectBlock(blockType: string, count: number): Promise<{ state: boolean; message: string }> {
     if (!this.mcData) {
       return { state: false, message: 'Minecraft data not loaded' };
     }
+
+    // Cap count to a reasonable maximum
+    const MAX_COLLECT = 5;
+    const targetCount = Math.min(Math.max(count, 1), MAX_COLLECT);
 
     // Resolve block type aliases (common names → actual block names)
     const blockTypes = resolveBlockAliases(blockType);
@@ -167,81 +199,72 @@ export class MinecraftBot {
       return { state: false, message: `Unknown block type: ${blockType}` };
     }
 
+    // Reset interrupt flag at the start of a new action
+    this.interruptFlag = false;
+
     let collected = 0;
 
     try {
-      for (let i = 0; i < count; i++) {
-        // Find nearby blocks (search up to 64 blocks away)
+      for (let i = 0; i < targetCount; i++) {
+        // ── Check for interruption ──────────────────────────────────────
+        if (this.interruptFlag) {
+          this.interruptFlag = false;
+          logger.info(`[${this.sessionId}] Collection interrupted after ${collected} blocks`);
+          return {
+            state: collected > 0,
+            message: collected > 0
+              ? `Collected ${collected}/${targetCount}x ${blockType} (interrupted)`
+              : `Collection cancelled`,
+          };
+        }
+
+        // ── Find nearby blocks, sorted by distance ─────────────────────
         const positions = this.bot.findBlocks({
           matching: blockIds,
           maxDistance: 64,
-          count: 1,
+          count: 10, // Find several candidates
         });
 
         if (positions.length === 0) {
           if (collected > 0) {
-            return { state: true, message: `Collected ${collected}/${count}x ${blockType} (no more found nearby)` };
+            return { state: true, message: `Collected ${collected}/${targetCount}x ${blockType} (no more found nearby)` };
           }
           return { state: false, message: `No ${blockType} found within 64 blocks` };
         }
 
-        // Get the actual Block object (this is what the plugin needs)
+        // Sort by distance to bot (nearest first)
+        const botPos = this.bot.entity.position;
+        positions.sort((a, b) =>
+          botPos.distanceTo(a) - botPos.distanceTo(b)
+        );
+
+        // Get the nearest actual Block object
         const block = this.bot.blockAt(positions[0]);
         if (!block) {
           continue;
         }
 
-        logger.info(`[${this.sessionId}] Collecting ${block.name} at (${block.position.x}, ${block.position.y}, ${block.position.z})`);
+        const dist = botPos.distanceTo(block.position).toFixed(1);
+        logger.info(`[${this.sessionId}] Collecting ${block.name} at (${block.position.x}, ${block.position.y}, ${block.position.z}) - ${dist} blocks away [${collected + 1}/${targetCount}]`);
 
-        // Try collectblock plugin first
+        // ── Collect the block ───────────────────────────────────────────
         try {
           await (this.bot as any).collectBlock.collect(block);
           collected++;
         } catch (pluginError) {
-          // Fallback: navigate to block, dig it, pick up items
-          logger.warn(`[${this.sessionId}] collectBlock plugin failed, using manual dig: ${(pluginError as Error).message}`);
+          // Fallback: navigate to block, dig it manually
+          logger.warn(`[${this.sessionId}] Plugin failed, manual dig: ${(pluginError as Error).message}`);
           try {
-            // Navigate close to the block
-            const goal = new goals.GoalNear(
-              block.position.x,
-              block.position.y,
-              block.position.z,
-              2
-            );
-            this.bot.pathfinder.setGoal(goal);
-
-            // Wait to arrive (simple timeout-based)
-            await new Promise<void>((resolve) => {
-              const check = setInterval(() => {
-                const dist = this.bot.entity.position.distanceTo(block.position);
-                if (dist < 4) {
-                  clearInterval(check);
-                  resolve();
-                }
-              }, 250);
-              setTimeout(() => {
-                clearInterval(check);
-                resolve();
-              }, 15000);
-            });
-
-            // Equip best tool for the block
-            try {
-              await (this.bot as any).tool.equipForBlock(block);
-            } catch {
-              // No tool plugin or no suitable tool - that's ok
-            }
-
-            // Dig the block
-            await this.bot.dig(block);
+            await this.manualCollect(block);
             collected++;
-
-            // Brief wait to pick up drops
-            await new Promise((r) => setTimeout(r, 500));
           } catch (manualError) {
-            logger.warn(`[${this.sessionId}] Manual dig also failed: ${(manualError as Error).message}`);
+            logger.warn(`[${this.sessionId}] Manual dig failed: ${(manualError as Error).message}`);
+            // Skip this block and try the next one
           }
         }
+
+        // Brief pause between collections (also lets interrupt flag take effect)
+        await new Promise((r) => setTimeout(r, 200));
       }
 
       if (collected === 0) {
@@ -250,11 +273,61 @@ export class MinecraftBot {
 
       return { state: true, message: `Collected ${collected}x ${blockType}` };
     } catch (error) {
+      this.interruptFlag = false;
       if (collected > 0) {
-        return { state: true, message: `Collected ${collected}/${count}x ${blockType} (then error: ${(error as Error).message})` };
+        return { state: true, message: `Collected ${collected}/${targetCount}x ${blockType} (then error: ${(error as Error).message})` };
       }
       return { state: false, message: `Failed to collect ${blockType}: ${(error as Error).message}` };
     }
+  }
+
+  /**
+   * Manual block collection fallback: navigate close, dig, wait for drops.
+   */
+  private async manualCollect(block: any): Promise<void> {
+    // Navigate close to the block
+    const goal = new goals.GoalNear(
+      block.position.x,
+      block.position.y,
+      block.position.z,
+      2
+    );
+    this.bot.pathfinder.setGoal(goal);
+
+    // Wait to arrive (check distance or timeout)
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        if (this.interruptFlag) {
+          clearInterval(check);
+          resolve();
+          return;
+        }
+        const dist = this.bot.entity.position.distanceTo(block.position);
+        if (dist < 4) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 250);
+      setTimeout(() => {
+        clearInterval(check);
+        resolve();
+      }, 10000);
+    });
+
+    if (this.interruptFlag) return;
+
+    // Equip best tool
+    try {
+      await (this.bot as any).tool.equipForBlock(block);
+    } catch {
+      // No tool plugin or no suitable tool
+    }
+
+    // Dig the block
+    await this.bot.dig(block);
+
+    // Brief wait to pick up drops
+    await new Promise((r) => setTimeout(r, 400));
   }
 
   /**
