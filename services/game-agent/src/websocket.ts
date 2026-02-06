@@ -5,6 +5,7 @@ import { createLogger } from '@dory/shared';
 import * as helpers from './actions/helpers';
 import * as vision from './actions/vision';
 import * as building from './actions/building';
+import * as playerBuilding from './actions/player-building';
 
 const logger = createLogger('websocket');
 
@@ -60,6 +61,10 @@ export function setupWebSocket(server: Server) {
         'pillar <sessionId> <height> <blockType>',
         'wall <sessionId> <length> <height> <blockType>',
         'looking <sessionId>',
+        'playerlooking <sessionId>',
+        'placehere <sessionId> <blockType>',
+        'pillarhere <sessionId> <height> <blockType>',
+        'wallhere <sessionId> <length> <height> <blockType>',
         'scan <sessionId> <range>',
         'inventory <sessionId>',
         'position <sessionId>',
@@ -127,10 +132,14 @@ async function executeCommand(ws: WebSocket, command: string, args: any[]) {
             'craft <sessionId> <itemName> <count>': 'Craft an item',
             'place <sessionId> <blockType> <x> <y> <z>': 'Place a block',
             'break <sessionId> <x> <y> <z>': 'Break a block',
-            'pillar <sessionId> <height> <blockType>': 'Build a pillar',
-            'wall <sessionId> <length> <height> <blockType>': 'Build a wall',
-            'floor <sessionId> <width> <length> <blockType>': 'Build a floor',
+            'pillar <sessionId> <height> <blockType>': 'Build a pillar at bot position',
+            'wall <sessionId> <length> <height> <blockType>': 'Build a wall at bot position',
+            'floor <sessionId> <width> <length> <blockType>': 'Build a floor at bot position',
             'looking <sessionId>': 'Describe what bot is looking at',
+            'playerlooking <sessionId>': 'Describe what PLAYER is looking at',
+            'placehere <sessionId> <blockType>': 'Place block where PLAYER is looking',
+            'pillarhere <sessionId> <height> <blockType>': 'Build pillar where PLAYER is looking',
+            'wallhere <sessionId> <length> <height> <blockType>': 'Build wall where PLAYER is looking',
             'scan <sessionId> <range>': 'Scan area for blocks and entities',
             'inventory <sessionId>': 'Show bot inventory',
             'position <sessionId>': 'Show bot position',
@@ -337,6 +346,75 @@ async function executeCommand(ws: WebSocket, command: string, args: any[]) {
           type: 'result',
           command: 'looking',
           data: { description },
+        }));
+        break;
+      }
+
+      case 'playerlooking': {
+        const sessionId = allArgs[0];
+        const bot = BotManager.getBot(sessionId);
+        if (!bot) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Session not found' }));
+          return;
+        }
+
+        const description = vision.describePlayerTarget(bot);
+        const details = vision.getBlockPlayerIsLookingAt(bot);
+        ws.send(JSON.stringify({
+          type: 'result',
+          command: 'playerlooking',
+          data: { description, details },
+        }));
+        break;
+      }
+
+      case 'placehere': {
+        const [sessionId, blockType] = allArgs;
+        const bot = BotManager.getBot(sessionId);
+        if (!bot) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Session not found' }));
+          return;
+        }
+
+        const result = await playerBuilding.placeBlockWherePlayerLooking(bot, blockType);
+        ws.send(JSON.stringify({
+          type: 'result',
+          command: 'placehere',
+          data: result,
+        }));
+        break;
+      }
+
+      case 'pillarhere': {
+        const [sessionId, height, blockType] = allArgs;
+        const bot = BotManager.getBot(sessionId);
+        if (!bot) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Session not found' }));
+          return;
+        }
+
+        const result = await playerBuilding.buildPillarWherePlayerLooking(bot, Number(height), blockType);
+        ws.send(JSON.stringify({
+          type: 'result',
+          command: 'pillarhere',
+          data: result,
+        }));
+        break;
+      }
+
+      case 'wallhere': {
+        const [sessionId, length, height, blockType] = allArgs;
+        const bot = BotManager.getBot(sessionId);
+        if (!bot) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Session not found' }));
+          return;
+        }
+
+        const result = await playerBuilding.buildWallWherePlayerLooking(bot, Number(length), Number(height), blockType);
+        ws.send(JSON.stringify({
+          type: 'result',
+          command: 'wallhere',
+          data: result,
         }));
         break;
       }

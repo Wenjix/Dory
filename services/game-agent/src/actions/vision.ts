@@ -211,3 +211,212 @@ export function getVisiblePlayers(bot: MinecraftBot): {
     return { success: false, players: [] };
   }
 }
+
+/**
+ * Get the nearest player entity
+ */
+function getNearestPlayer(bot: MinecraftBot) {
+  const players = Object.values(bot.bot.players).filter(
+    (player) => player.entity && player.username !== bot.username
+  );
+
+  if (players.length === 0) return null;
+
+  return players.reduce((nearest, current) => {
+    const nearestDist = bot.bot.entity.position.distanceTo(nearest.entity!.position);
+    const currentDist = bot.bot.entity.position.distanceTo(current.entity!.position);
+    return currentDist < nearestDist ? current : nearest;
+  });
+}
+
+/**
+ * Perform raycast from PLAYER's point of view
+ * This is more intuitive for building commands.
+ * 
+ * Face detection uses the readyplayerx approach: track the previous block
+ * position along the ray, and when we enter a solid block, determine which
+ * face was crossed by comparing current vs previous block coordinates.
+ */
+export function getBlockPlayerIsLookingAt(
+  bot: MinecraftBot,
+  maxDistance: number = 6
+): {
+  success: boolean;
+  blockName?: string;
+  blockId?: number;
+  position?: { x: number; y: number; z: number };
+  distance?: number;
+  face?: 'top' | 'bottom' | 'north' | 'south' | 'east' | 'west';
+  adjacentPosition?: { x: number; y: number; z: number };
+} {
+  try {
+    const player = getNearestPlayer(bot);
+    if (!player || !player.entity) {
+      return { success: false };
+    }
+
+    const playerEntity = player.entity;
+    const yaw = playerEntity.yaw;
+    const pitch = playerEntity.pitch;
+
+    // Player's eye position (1.62 blocks above feet)
+    const eyePosition = playerEntity.position.offset(0, 1.62, 0);
+
+    // Calculate look direction vector (mineflayer conventions)
+    const direction = new Vec3(
+      -Math.sin(yaw) * Math.cos(pitch),
+      Math.sin(pitch),
+      -Math.cos(yaw) * Math.cos(pitch)
+    ).normalize();
+
+    // Raycast with small step size for accuracy (matching readyplayerx)
+    const stepSize = 0.05;
+    let lastBlockPos: Vec3 | null = null;
+    let hitBlock: Block | null = null;
+    let hitFace: 'top' | 'bottom' | 'north' | 'south' | 'east' | 'west' = 'top';
+    let hitDistance = 0;
+
+    for (let dist = 0; dist <= maxDistance; dist += stepSize) {
+      // Actual ray position (not floored)
+      const currentPos = eyePosition.offset(
+        direction.x * dist,
+        direction.y * dist,
+        direction.z * dist
+      );
+
+      // Block coordinates (floored)
+      const blockPos = new Vec3(
+        Math.floor(currentPos.x),
+        Math.floor(currentPos.y),
+        Math.floor(currentPos.z)
+      );
+
+      // Skip if we're still in the same block
+      if (lastBlockPos && blockPos.equals(lastBlockPos)) {
+        continue;
+      }
+
+      // Check block at this position
+      const block = bot.bot.blockAt(blockPos);
+
+      if (block && block.name !== 'air' && block.name !== 'water' && block.name !== 'lava') {
+        // Hit a solid block!
+        hitBlock = block;
+        hitDistance = dist;
+
+        // Determine which face was hit by checking which boundary we crossed
+        if (lastBlockPos) {
+          const dx = blockPos.x - lastBlockPos.x;
+          const dy = blockPos.y - lastBlockPos.y;
+          const dz = blockPos.z - lastBlockPos.z;
+
+          if (dx !== 0 || dy !== 0 || dz !== 0) {
+            // Use boundary-crossing direction (readyplayerx approach)
+            // Priority: check the axis with the largest change first
+            // For diagonal crossings, use the intersection point to resolve
+            if (Math.abs(dy) >= Math.abs(dx) && Math.abs(dy) >= Math.abs(dz)) {
+              hitFace = dy < 0 ? 'top' : 'bottom';
+            } else if (Math.abs(dx) >= Math.abs(dz)) {
+              hitFace = dx < 0 ? 'east' : 'west';
+            } else {
+              hitFace = dz < 0 ? 'south' : 'north';
+            }
+
+            // If multiple axes changed (diagonal entry), refine using
+            // which face of the block the ray point is closest to
+            if ((dx !== 0 ? 1 : 0) + (dy !== 0 ? 1 : 0) + (dz !== 0 ? 1 : 0) > 1) {
+              const relX = currentPos.x - blockPos.x;
+              const relY = currentPos.y - blockPos.y;
+              const relZ = currentPos.z - blockPos.z;
+
+              const distances = [
+                { face: 'west' as const, d: relX },           // distance to x=0 face
+                { face: 'east' as const, d: 1 - relX },       // distance to x=1 face
+                { face: 'bottom' as const, d: relY },          // distance to y=0 face
+                { face: 'top' as const, d: 1 - relY },        // distance to y=1 face
+                { face: 'north' as const, d: relZ },           // distance to z=0 face
+                { face: 'south' as const, d: 1 - relZ },      // distance to z=1 face
+              ];
+
+              // The face closest to the intersection point is the entry face
+              distances.sort((a, b) => a.d - b.d);
+              hitFace = distances[0].face;
+            }
+          }
+        } else {
+          // Fallback: determine face from intersection point relative to block center
+          const relX = currentPos.x - blockPos.x - 0.5;
+          const relY = currentPos.y - blockPos.y - 0.5;
+          const relZ = currentPos.z - blockPos.z - 0.5;
+
+          const absX = Math.abs(relX);
+          const absY = Math.abs(relY);
+          const absZ = Math.abs(relZ);
+
+          if (absY > absX && absY > absZ) {
+            hitFace = relY > 0 ? 'top' : 'bottom';
+          } else if (absX > absZ) {
+            hitFace = relX > 0 ? 'east' : 'west';
+          } else {
+            hitFace = relZ > 0 ? 'south' : 'north';
+          }
+        }
+
+        break; // Found our block, stop raycast
+      }
+
+      // Track the last block position (this was air/water/lava or out of range)
+      lastBlockPos = blockPos;
+    }
+
+    if (!hitBlock) {
+      return { success: false };
+    }
+
+    // Calculate adjacent position based on face
+    const adjacentPos = hitBlock.position.clone();
+    switch (hitFace) {
+      case 'top':    adjacentPos.y += 1; break;
+      case 'bottom': adjacentPos.y -= 1; break;
+      case 'north':  adjacentPos.z -= 1; break;
+      case 'south':  adjacentPos.z += 1; break;
+      case 'west':   adjacentPos.x -= 1; break;
+      case 'east':   adjacentPos.x += 1; break;
+    }
+
+    logger.info(`Player raycast hit ${hitBlock.name} at (${hitBlock.position.x}, ${hitBlock.position.y}, ${hitBlock.position.z}), face: ${hitFace}, adjacent: (${adjacentPos.x}, ${adjacentPos.y}, ${adjacentPos.z})`);
+
+    return {
+      success: true,
+      blockName: hitBlock.name,
+      blockId: hitBlock.type,
+      position: {
+        x: hitBlock.position.x,
+        y: hitBlock.position.y,
+        z: hitBlock.position.z,
+      },
+      distance: hitDistance,
+      face: hitFace,
+      adjacentPosition: {
+        x: adjacentPos.x,
+        y: adjacentPos.y,
+        z: adjacentPos.z,
+      },
+    };
+  } catch (error) {
+    logger.error('getBlockPlayerIsLookingAt error:', error);
+    return { success: false };
+  }
+}
+
+/**
+ * Describe what the PLAYER is currently looking at
+ */
+export function describePlayerTarget(bot: MinecraftBot): string {
+  const result = getBlockPlayerIsLookingAt(bot);
+  if (result.success && result.blockName) {
+    return `Player is looking at ${result.blockName} at (${result.position?.x}, ${result.position?.y}, ${result.position?.z}), ${result.distance?.toFixed(1)} blocks away, facing ${result.face} side. Adjacent position: (${result.adjacentPosition?.x}, ${result.adjacentPosition?.y}, ${result.adjacentPosition?.z})`;
+  }
+
+  return "Player is not looking at any block (probably sky or too far away)";
+}

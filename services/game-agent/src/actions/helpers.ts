@@ -36,12 +36,12 @@ export async function goToPosition(
       };
 
       const cleanup = () => {
-        bot.bot.pathfinder.removeListener('goal_reached', onGoalReached);
-        bot.bot.pathfinder.removeListener('path_update', onPathUpdate);
+        (bot.bot.pathfinder as any).removeListener('goal_reached', onGoalReached);
+        (bot.bot.pathfinder as any).removeListener('path_update', onPathUpdate);
       };
 
-      bot.bot.pathfinder.on('goal_reached', onGoalReached);
-      bot.bot.pathfinder.on('path_update', onPathUpdate);
+      (bot.bot.pathfinder as any).on('goal_reached', onGoalReached);
+      (bot.bot.pathfinder as any).on('path_update', onPathUpdate);
 
       // Timeout after 60 seconds
       setTimeout(() => {
@@ -149,7 +149,7 @@ export async function craftItem(
     }
 
     // Craft the item
-    await bot.bot.craft(recipe, count, null);
+    await bot.bot.craft(recipe, count, undefined as any);
     return { success: true, message: `Crafted ${count}x ${itemName}` };
   } catch (error) {
     return { success: false, message: `Failed to craft: ${(error as Error).message}` };
@@ -158,6 +158,7 @@ export async function craftItem(
 
 /**
  * Place a block at specific coordinates
+ * Based on readyplayerx implementation
  */
 export async function placeBlock(
   bot: MinecraftBot,
@@ -167,32 +168,94 @@ export async function placeBlock(
   z: number
 ): Promise<{ success: boolean; message: string }> {
   try {
+    // Validate coordinates
+    if (isNaN(x) || isNaN(y) || isNaN(z)) {
+      return {
+        success: false,
+        message: `Invalid coordinates: (${x}, ${y}, ${z})`,
+      };
+    }
+
+    const targetPos = new Vec3(x, y, z);
+    const botPos = bot.bot.entity.position;
+    const distance = botPos.distanceTo(targetPos);
+
+    // Check if target is already occupied
+    const targetBlock = bot.bot.blockAt(targetPos);
+    if (targetBlock && targetBlock.name !== 'air') {
+      return {
+        success: false,
+        message: `Position (${x}, ${y}, ${z}) is not empty (${targetBlock.name})`,
+      };
+    }
+
+    // Move closer if needed (max reach is 4.5 blocks)
+    const MAX_PLACEMENT_DISTANCE = 4.5;
+    if (distance > MAX_PLACEMENT_DISTANCE) {
+      await goToPosition(bot, x, y, z, 3);
+      const newDistance = bot.bot.entity.position.distanceTo(targetPos);
+      if (newDistance > MAX_PLACEMENT_DISTANCE) {
+        return {
+          success: false,
+          message: `Cannot place: too far away (${newDistance.toFixed(2)} blocks)`,
+        };
+      }
+    }
+
+    // Find a reference block to place against (try all 6 directions)
+    const directions = [
+      { vec: new Vec3(0, -1, 0), face: new Vec3(0, 1, 0) },  // Below
+      { vec: new Vec3(0, 1, 0), face: new Vec3(0, -1, 0) },  // Above
+      { vec: new Vec3(1, 0, 0), face: new Vec3(-1, 0, 0) },  // East
+      { vec: new Vec3(-1, 0, 0), face: new Vec3(1, 0, 0) },  // West
+      { vec: new Vec3(0, 0, 1), face: new Vec3(0, 0, -1) },  // South
+      { vec: new Vec3(0, 0, -1), face: new Vec3(0, 0, 1) },  // North
+    ];
+
+    let referenceBlock = null;
+    let faceVector = null;
+
+    for (const dir of directions) {
+      const refPos = targetPos.plus(dir.vec);
+      const block = bot.bot.blockAt(refPos);
+      if (block && block.name !== 'air') {
+        referenceBlock = block;
+        faceVector = dir.face;
+        break;
+      }
+    }
+
+    if (!referenceBlock || !faceVector) {
+      return {
+        success: false,
+        message: `No block to place against at (${x}, ${y}, ${z})`,
+      };
+    }
+
     // Equip the block
     const equipped = await equipItem(bot, itemName);
     if (!equipped) {
-      return { success: false, message: `Don't have ${itemName} in inventory` };
+      return {
+        success: false,
+        message: `Don't have ${itemName} in inventory`,
+      };
     }
 
-    // Get the block at target position
-    const targetBlock = bot.bot.blockAt(new Vec3(x, y, z));
-    if (!targetBlock || targetBlock.name === 'air') {
-      // Find a reference block to place against
-      const referenceBlock = bot.bot.blockAt(new Vec3(x, y - 1, z));
-      if (!referenceBlock || referenceBlock.name === 'air') {
-        return { success: false, message: 'No block to place against' };
-      }
+    // Look at reference block
+    await bot.bot.lookAt(referenceBlock.position.offset(0.5, 0.5, 0.5));
 
-      // Go near the position
-      await goToPosition(bot, x, y, z, 4);
+    // Place the block
+    await bot.bot.placeBlock(referenceBlock, faceVector);
 
-      // Place the block
-      await bot.bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
-      return { success: true, message: `Placed ${itemName} at (${x}, ${y}, ${z})` };
-    }
-
-    return { success: false, message: 'Position is not empty' };
+    return {
+      success: true,
+      message: `Placed ${itemName} at (${x}, ${y}, ${z})`,
+    };
   } catch (error) {
-    return { success: false, message: `Failed to place block: ${(error as Error).message}` };
+    return {
+      success: false,
+      message: `Failed to place block: ${(error as Error).message}`,
+    };
   }
 }
 

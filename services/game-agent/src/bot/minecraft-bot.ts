@@ -126,12 +126,12 @@ export class MinecraftBot {
       };
 
       const cleanup = () => {
-        this.bot.pathfinder.removeListener('goal_reached', onGoalReached);
-        this.bot.pathfinder.removeListener('path_update', onPathUpdate);
+        (this.bot.pathfinder as any).removeListener('goal_reached', onGoalReached);
+        (this.bot.pathfinder as any).removeListener('path_update', onPathUpdate);
       };
 
-      this.bot.pathfinder.on('goal_reached', onGoalReached);
-      this.bot.pathfinder.on('path_update', onPathUpdate);
+      (this.bot.pathfinder as any).on('goal_reached', onGoalReached);
+      (this.bot.pathfinder as any).on('path_update', onPathUpdate);
 
       // Timeout after 30 seconds
       setTimeout(() => {
