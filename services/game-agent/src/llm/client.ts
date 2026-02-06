@@ -44,7 +44,7 @@ export function createLLMClient(overrides?: Partial<LLMProviderConfig> & { provi
     || 'mistral';
 
   const apiKey = overrides?.apiKey || getApiKeyFromEnv(providerType);
-  const model = overrides?.model || process.env.LLM_MODEL || DEFAULT_MODELS[providerType];
+  const model = overrides?.model || getModelFromEnv(providerType) || DEFAULT_MODELS[providerType];
 
   if (!apiKey) {
     throw new Error(
@@ -91,6 +91,18 @@ function getApiKeyFromEnv(provider: LLMProviderType): string | undefined {
       return process.env.OPENAI_API_KEY;
     case 'anthropic':
       return process.env.ANTHROPIC_API_KEY;
+  }
+}
+
+function getModelFromEnv(provider: LLMProviderType): string | undefined {
+  // Check provider-specific model env var first, then generic LLM_MODEL
+  switch (provider) {
+    case 'mistral':
+      return process.env.MISTRAL_MODEL || process.env.LLM_MODEL;
+    case 'openai':
+      return process.env.OPENAI_MODEL || process.env.LLM_MODEL;
+    case 'anthropic':
+      return process.env.ANTHROPIC_MODEL || process.env.LLM_MODEL;
   }
 }
 
