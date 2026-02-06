@@ -51,9 +51,24 @@ importers:
       mineflayer-pathfinder:
         specifier: ^2.4.4
         version: 2.4.5
+      mineflayer-pvp:
+        specifier: ^1.3.2
+        version: 1.3.2(prismarine-registry@1.11.0)
+      prismarine-block:
+        specifier: ^1.17.0
+        version: 1.22.0(prismarine-registry@1.11.0)
       prismarine-item:
         specifier: ^1.14.0
         version: 1.17.0
+      uuid:
+        specifier: ^9.0.1
+        version: 9.0.1
+      vec3:
+        specifier: ^0.1.8
+        version: 0.1.10
+      ws:
+        specifier: ^8.16.0
+        version: 8.19.0
     devDependencies:
       '@types/cors':
         specifier: ^2.8.17
@@ -64,6 +79,12 @@ importers:
       '@types/node':
         specifier: ^20.10.0
         version: 20.19.32
+      '@types/uuid':
+        specifier: ^9.0.7
+        version: 9.0.8
+      '@types/ws':
+        specifier: ^8.5.10
+        version: 8.18.1
       tsx:
         specifier: ^4.7.0
         version: 4.21.0
@@ -392,6 +413,10 @@ packages:
       '@types/node': 20.19.32
     dev: false
 
+  /@types/node@14.18.63:
+    resolution: {integrity: sha512-fAtCfv4jJg+ExtXhvCkCqUKZ+4ok/JQk01qDKhL5BDDoS3AxKXhV5/MAVUZyQnSEd2GT92fkgZl0pz0Q0AzcIQ==}
+    dev: false
+
   /@types/node@20.19.32:
     resolution: {integrity: sha512-Ez8QE4DMfhjjTsES9K2dwfV258qBui7qxUsoaixZDiTzbde4U12e1pXGNu/ECsUIOi5/zoCxAQxIhQnaUQ2VvA==}
     dependencies:
@@ -435,6 +460,16 @@ packages:
   /@types/triple-beam@1.3.5:
     resolution: {integrity: sha512-6WaYesThRMCl19iryMYP7/x2OVgCtbIVflDGFpWnb9irXI3UjYE4AzmYuiUKY1AJstGijoY+MgUszMgRxIYTYw==}
     dev: false
+
+  /@types/uuid@9.0.8:
+    resolution: {integrity: sha512-jg+97EGIcY9AGHJJRaaPVgetKDsrTgbRjQ5Msgjh/DQKEFl0DtyRr/VCOyD1T2R1MNeWPK/u7JoGhlDZnKBAfA==}
+    dev: true
+
+  /@types/ws@8.18.1:
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+    dependencies:
+      '@types/node': 20.19.32
+    dev: true
 
   /@xboxreplay/errors@0.1.0:
     resolution: {integrity: sha512-Tgz1d/OIPDWPeyOvuL5+aai5VCcqObhPnlI3skQuf80GVF3k1I0lPCnGC+8Cm5PV9aLBT5m8qPcJoIUQ2U4y9g==}
@@ -1077,6 +1112,10 @@ packages:
     hasBin: true
     dev: false
 
+  /minecraft-data@2.221.0:
+    resolution: {integrity: sha512-0AhqzbIKb6WqPSF6qBevaPryeWOz545hLxt6q+gfJF8YIQX/YfkyX/nXWhl+pSIS2rTBcQ0RJkRCtTeRzQwHDA==}
+    dev: false
+
   /minecraft-data@3.103.0:
     resolution: {integrity: sha512-laUAUiQ1OXPQPSzGFrx+v4M3LldcIiGuUjLAXzBmA3jZxjwwUKfgEr/7da8CvOeWlwkl+t/sMf5Fw7u7GNE2yg==}
     dev: false
@@ -1136,6 +1175,18 @@ packages:
       vec3: 0.1.10
     dev: false
 
+  /mineflayer-pvp@1.3.2(prismarine-registry@1.11.0):
+    resolution: {integrity: sha512-CI2T5w4ceiQdQRCFdrCs3OYmvO9G0cOx2qovUt6f27gknpVI90Ihe1qYhf+zBZJCg9uP1oJ1Pemlzw46Mm3wcA==}
+    dependencies:
+      mineflayer: 4.34.0
+      mineflayer-pathfinder: 2.4.5
+      mineflayer-utils: 0.1.4(prismarine-registry@1.11.0)
+    transitivePeerDependencies:
+      - encoding
+      - prismarine-registry
+      - supports-color
+    dev: false
+
   /mineflayer-tool@1.2.0:
     resolution: {integrity: sha512-TRd7JOX4obJnzqzVi+4MLKmbeeCDjp9taerLKM8+AGpWfgtdbAguGmsr3BHu+TdXxOIT05veYecCv77S3KX6PA==}
     dependencies:
@@ -1144,6 +1195,45 @@ packages:
       prismarine-nbt: 2.8.0
     transitivePeerDependencies:
       - encoding
+      - supports-color
+    dev: false
+
+  /mineflayer-utils@0.1.4(prismarine-registry@1.11.0):
+    resolution: {integrity: sha512-8+0dbGAjA6FO62/W80v5k44AuSAcwJUMdpMAAGhjI9AdCDz+UuyTnNkPBncF4EcLY7yUUdtA7m/OXQZKFdWOlg==}
+    dependencies:
+      '@types/node': 14.18.63
+      mineflayer: 2.41.0(prismarine-registry@1.11.0)
+      prismarine-entity: 1.2.0
+      require-self: 0.2.3
+      typescript: 3.9.10
+    transitivePeerDependencies:
+      - encoding
+      - prismarine-registry
+      - supports-color
+    dev: false
+
+  /mineflayer@2.41.0(prismarine-registry@1.11.0):
+    resolution: {integrity: sha512-IFFy4NgF24FU2PkAwazJphl2F+3gpbpN578ex0sq1XfcBBRge3kCz1UC2KDMjKI+V/8vffOL+OEnug9jt3f7Vw==}
+    engines: {node: '>=14'}
+    dependencies:
+      minecraft-data: 2.221.0
+      minecraft-protocol: 1.63.0
+      prismarine-biome: 1.3.0(minecraft-data@2.221.0)(prismarine-registry@1.11.0)
+      prismarine-block: 1.22.0(prismarine-registry@1.11.0)
+      prismarine-chat: 1.12.0
+      prismarine-chunk: 1.39.0(minecraft-data@2.221.0)
+      prismarine-entity: 1.2.0
+      prismarine-item: 1.17.0
+      prismarine-physics: 1.10.0
+      prismarine-recipe: 1.3.1(prismarine-registry@1.11.0)
+      prismarine-windows: 1.6.0
+      prismarine-world: 3.6.3
+      protodef: 1.19.0
+      typed-emitter: 1.4.0
+      vec3: 0.1.10
+    transitivePeerDependencies:
+      - encoding
+      - prismarine-registry
       - supports-color
     dev: false
 
@@ -1269,6 +1359,16 @@ packages:
       - supports-color
     dev: false
 
+  /prismarine-biome@1.3.0(minecraft-data@2.221.0)(prismarine-registry@1.11.0):
+    resolution: {integrity: sha512-GY6nZxq93mTErT7jD7jt8YS1aPrOakbJHh39seYsJFXvueIOdHAmW16kYQVrTVMW5MlWLQVxV/EquRwOgr4MnQ==}
+    peerDependencies:
+      minecraft-data: ^3.0.0
+      prismarine-registry: ^1.1.0
+    dependencies:
+      minecraft-data: 2.221.0
+      prismarine-registry: 1.11.0
+    dev: false
+
   /prismarine-biome@1.3.0(minecraft-data@3.103.0)(prismarine-registry@1.11.0):
     resolution: {integrity: sha512-GY6nZxq93mTErT7jD7jt8YS1aPrOakbJHh39seYsJFXvueIOdHAmW16kYQVrTVMW5MlWLQVxV/EquRwOgr4MnQ==}
     peerDependencies:
@@ -1300,6 +1400,22 @@ packages:
       prismarine-registry: 1.11.0
     dev: false
 
+  /prismarine-chunk@1.39.0(minecraft-data@2.221.0):
+    resolution: {integrity: sha512-RJHACPV2T3ABGlj0+q/ZUDBLPcslWTIa12lWyE2jJb/svqpTBx8S/K6VjHxhyJ488L9ZWdEmOAr+CHMZJtwWHw==}
+    engines: {node: '>=14'}
+    dependencies:
+      prismarine-biome: 1.3.0(minecraft-data@2.221.0)(prismarine-registry@1.11.0)
+      prismarine-block: 1.22.0(prismarine-registry@1.11.0)
+      prismarine-nbt: 2.8.0
+      prismarine-registry: 1.11.0
+      smart-buffer: 4.2.0
+      uint4: 0.1.2
+      vec3: 0.1.10
+      xxhash-wasm: 0.4.2
+    transitivePeerDependencies:
+      - minecraft-data
+    dev: false
+
   /prismarine-chunk@1.39.0(minecraft-data@3.103.0):
     resolution: {integrity: sha512-RJHACPV2T3ABGlj0+q/ZUDBLPcslWTIa12lWyE2jJb/svqpTBx8S/K6VjHxhyJ488L9ZWdEmOAr+CHMZJtwWHw==}
     engines: {node: '>=14'}
@@ -1314,6 +1430,12 @@ packages:
       xxhash-wasm: 0.4.2
     transitivePeerDependencies:
       - minecraft-data
+    dev: false
+
+  /prismarine-entity@1.2.0:
+    resolution: {integrity: sha512-4dQ9LYl6HDJQrwZHjSKU4D5VNyHRnfrjcw7eVLlbRPkuR50utW5mmfPi4ys9U7tHNmGWHC/cwjH9xzT75LUovQ==}
+    dependencies:
+      vec3: 0.1.10
     dev: false
 
   /prismarine-entity@2.5.0:
@@ -1370,6 +1492,12 @@ packages:
       minecraft-data: 3.103.0
       prismarine-block: 1.22.0(prismarine-registry@1.11.0)
       prismarine-nbt: 2.8.0
+    dev: false
+
+  /prismarine-windows@1.6.0:
+    resolution: {integrity: sha512-026LG1yR76Xb62kM+W83IWT7Wy2yKplllbXNFBF2m0Lr4k4YpYKnpLb8tRft8MLOLRbYAt/KnxE/YKvRZul7kw==}
+    dependencies:
+      prismarine-item: 1.17.0
     dev: false
 
   /prismarine-windows@2.9.0:
@@ -1473,6 +1601,11 @@ packages:
       events: 3.3.0
       process: 0.11.10
       string_decoder: 1.3.0
+    dev: false
+
+  /require-self@0.2.3:
+    resolution: {integrity: sha512-keGBWkK0PWJGFAd6IznpjM5zZzySbsrvzq0ElXpZ4G8hzymV9I+/OnC916MF5mRxHRWSZKGIyCFJ73BZFz3xaA==}
+    hasBin: true
     dev: false
 
   /resolve-pkg-maps@1.0.0:
@@ -1721,6 +1854,12 @@ packages:
       rxjs: 7.8.2
     dev: false
 
+  /typescript@3.9.10:
+    resolution: {integrity: sha512-w6fIxVE/H1PkLKcCPsFqKE7Kv7QUwhU8qQY2MueZXWx5cPZdwFupLgKK3vntcK98BtNHZtAF4LA/yl2a7k8R6Q==}
+    engines: {node: '>=4.2.0'}
+    hasBin: true
+    dev: false
+
   /typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -1762,6 +1901,11 @@ packages:
 
   /uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+    hasBin: true
+    dev: false
+
+  /uuid@9.0.1:
+    resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
     hasBin: true
     dev: false
 
@@ -1809,6 +1953,19 @@ packages:
       stack-trace: 0.0.10
       triple-beam: 1.4.1
       winston-transport: 4.9.0
+    dev: false
+
+  /ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
     dev: false
 
   /xxhash-wasm@0.4.2:
