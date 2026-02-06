@@ -1,0 +1,30 @@
+{
+  "name": "@dory/voice-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "download": "node --import tsx/esm node_modules/@livekit/agents/dist/cli.js download-files"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.0.37",
+    "@livekit/agents-plugin-deepgram": "^1.0.37",
+    "@livekit/agents-plugin-elevenlabs": "1.x",
+    "@livekit/agents-plugin-openai": "^1.0.37",
+    "@livekit/agents-plugin-silero": "^1.0.37",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "livekit-server-sdk": "^2.14.1",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

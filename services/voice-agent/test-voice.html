@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dory Voice Agent - Test Console</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    h1 { color: #22d3ee; margin-bottom: 0.5rem; font-size: 1.8rem; }
+    .subtitle { color: #94a3b8; margin-bottom: 2rem; font-size: 0.9rem; }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 520px;
+      margin-bottom: 1.2rem;
+    }
+    .card h2 {
+      color: #22d3ee;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    label {
+      display: block;
+      color: #94a3b8;
+      font-size: 0.82rem;
+      margin-bottom: 0.25rem;
+    }
+    input {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 0.88rem;
+      margin-bottom: 0.7rem;
+    }
+    input:focus { outline: none; border-color: #22d3ee; }
+    button {
+      padding: 0.65rem 1.2rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 600;
+    }
+    .btn-connect {
+      background: #22d3ee;
+      color: #0f172a;
+      width: 100%;
+    }
+    .btn-connect:hover { background: #06b6d4; }
+    .btn-connect:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .controls {
+      display: none;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
+    }
+    .controls.active { display: flex; }
+
+    .btn-mute {
+      flex: 1;
+      background: #475569;
+      color: white;
+    }
+    .btn-mute:hover { background: #64748b; }
+    .btn-mute.muted {
+      background: #f59e0b;
+      color: #0f172a;
+    }
+
+    .btn-disconnect {
+      flex: 1;
+      background: #ef4444;
+      color: white;
+    }
+    .btn-disconnect:hover { background: #dc2626; }
+
+    #status {
+      text-align: center;
+      padding: 0.8rem;
+      font-size: 0.88rem;
+      color: #94a3b8;
+    }
+    .status-connected { color: #4ade80 !important; }
+    .status-error { color: #ef4444 !important; }
+    .status-connecting { color: #fbbf24 !important; }
+    #log {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 1rem;
+      max-height: 350px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      line-height: 1.7;
+    }
+    .log-entry { margin-bottom: 0.2rem; }
+    .log-user { color: #60a5fa; }
+    .log-agent { color: #4ade80; }
+    .log-system { color: #94a3b8; }
+    .log-error { color: #ef4444; }
+    .log-partial { color: #60a5fa; opacity: 0.5; font-style: italic; }
+
+    .audio-indicator {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.6rem;
+      color: #4ade80;
+      font-size: 0.88rem;
+    }
+    .audio-indicator.active { display: flex; }
+    .pulse {
+      width: 10px;
+      height: 10px;
+      background: #4ade80;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Dory Voice Agent</h1>
+  <p class="subtitle">Test console for LiveKit voice conversations</p>
+
+  <div class="card">
+    <h2>Connection</h2>
+    <label>Voice Agent URL</label>
+    <input type="text" id="agentUrl" value="http://localhost:4001" />
+    <label>Room Name (optional)</label>
+    <input type="text" id="roomName" placeholder="auto-generated" />
+    <button class="btn-connect" id="connectBtn" onclick="connect()">Connect & Start Talking</button>
+    <div class="controls" id="controls">
+      <button class="btn-mute" id="muteBtn" onclick="toggleMute()">Mute Mic</button>
+      <button class="btn-disconnect" id="disconnectBtn" onclick="disconnect()">Disconnect</button>
+    </div>
+  </div>
+
+  <div class="audio-indicator" id="audioIndicator">
+    <div class="pulse"></div>
+    <span id="indicatorText">Listening... speak to Dory</span>
+  </div>
+
+  <div id="status">Not connected</div>
+
+  <div class="card">
+    <h2>Conversation</h2>
+    <div id="log">
+      <div class="log-entry log-system">Ready to connect...</div>
+    </div>
+  </div>
+
+  <!-- LiveKit Client SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+
+  <script>
+    let room = null;
+    let isMuted = false;
+
+    function log(text, type = 'system') {
+      const logEl = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const prefix = type === 'user' ? '[You] '
+        : type === 'agent' ? '[Dory] '
+        : type === 'error' ? '[Error] '
+        : type === 'partial' ? '[You...] '
+        : '';
+      entry.textContent = prefix + text;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(text, cls = '') {
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = cls ? `status-${cls}` : '';
+    }
+
+    function showControls(show) {
+      document.getElementById('connectBtn').style.display = show ? 'none' : '';
+      document.getElementById('controls').classList.toggle('active', show);
+      document.getElementById('audioIndicator').classList.toggle('active', show);
+    }
+
+    // ── Mute Toggle ────────────────────────────────────────────────────────
+    async function toggleMute() {
+      if (!room) return;
+      isMuted = !isMuted;
+      await room.localParticipant.setMicrophoneEnabled(!isMuted);
+
+      const btn = document.getElementById('muteBtn');
+      btn.textContent = isMuted ? 'Unmute Mic' : 'Mute Mic';
+      btn.classList.toggle('muted', isMuted);
+
+      const indicator = document.getElementById('indicatorText');
+      indicator.textContent = isMuted ? 'Microphone muted' : 'Listening... speak to Dory';
+
+      log(isMuted ? 'Microphone muted' : 'Microphone unmuted');
+    }
+
+    // ── Connect ────────────────────────────────────────────────────────────
+    async function connect() {
+      const agentUrl = document.getElementById('agentUrl').value.trim();
+      const roomName = document.getElementById('roomName').value.trim() || undefined;
+
+      if (!agentUrl) {
+        log('Please enter the voice agent URL', 'error');
+        return;
+      }
+
+      document.getElementById('connectBtn').disabled = true;
+      setStatus('Requesting token...', 'connecting');
+      log('Requesting room token...');
+
+      try {
+        // Get room token
+        const tokenRes = await fetch(`${agentUrl}/api/room-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomName }),
+        });
+
+        if (!tokenRes.ok) {
+          throw new Error(`Token request failed: ${tokenRes.status}`);
+        }
+
+        const { token, wsUrl, roomName: assignedRoom, identity } = await tokenRes.json();
+        log(`Room: "${assignedRoom}", identity: "${identity}"`);
+
+        // Connect to LiveKit
+        setStatus('Connecting to LiveKit...', 'connecting');
+        room = new LivekitClient.Room({
+          audioCaptureDefaults: {
+            autoGainControl: true,
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+          audioOutput: { deviceId: '' },
+        });
+
+        // ── Audio track from agent (so we hear Dory) ────────────────────
+        room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+          if (track.kind === 'audio') {
+            const el = track.attach();
+            document.body.appendChild(el);
+            log(`Agent audio connected (${participant.identity})`);
+          }
+        });
+
+        // ── Transcriptions (user speech + agent responses as text) ──────
+        // LiveKit agents send transcriptions via this event
+        room.on(LivekitClient.RoomEvent.TranscriptionReceived, (segments, participant) => {
+          for (const seg of segments) {
+            if (!seg.text) continue;
+
+            // Determine if this is from the agent or the user
+            const isAgent = participant && (
+              participant.identity?.includes('agent') ||
+              participant !== room.localParticipant
+            );
+
+            if (seg.final) {
+              log(seg.text, isAgent ? 'agent' : 'user');
+            }
+          }
+        });
+
+        // ── Participant events ──────────────────────────────────────────
+        room.on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
+          log(`${p.identity} joined the room`);
+        });
+
+        room.on(LivekitClient.RoomEvent.Disconnected, () => {
+          setStatus('Disconnected', '');
+          log('Disconnected from room');
+          showControls(false);
+          document.getElementById('connectBtn').disabled = false;
+          isMuted = false;
+          document.getElementById('muteBtn').textContent = 'Mute Mic';
+          document.getElementById('muteBtn').classList.remove('muted');
+        });
+
+        // ── Connect and enable mic ──────────────────────────────────────
+        await room.connect(wsUrl, token);
+        await room.localParticipant.setMicrophoneEnabled(true);
+
+        setStatus(`Connected to "${assignedRoom}"`, 'connected');
+        log('Connected! Start speaking to Dory...');
+        showControls(true);
+
+      } catch (err) {
+        setStatus('Connection failed', 'error');
+        log(err.message, 'error');
+        console.error(err);
+        document.getElementById('connectBtn').disabled = false;
+      }
+    }
+
+    // ── Disconnect ─────────────────────────────────────────────────────────
+    async function disconnect() {
+      if (room) {
+        await room.disconnect();
+        room = null;
+      }
+    }
+  </script>
+</body>
+</html>
