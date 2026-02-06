@@ -4,7 +4,7 @@
  * Handles incoming A2A messages from the voice agent (or any external agent).
  * Routes messages through the existing handleMessage pipeline.
  *
- * Uses a default session ("a2a-session") or the first active bot session.
+ * Uses the first active bot session, or returns an error if none exist.
  */
 
 import { createLogger } from '@dory/shared';
@@ -13,9 +13,6 @@ import { handleMessage } from '../agent';
 import { getLLMClient } from '../llm';
 
 const logger = createLogger('A2AHandler');
-
-/** Default session ID for A2A messages when no specific session is provided */
-const A2A_DEFAULT_SESSION = 'a2a-default-session';
 
 export interface A2AMessageRequest {
   message: string;
@@ -45,41 +42,57 @@ export async function handleA2AMessage(
 ): Promise<A2AMessageResponse> {
   const { message, sessionId: requestedSession } = req;
 
-  logger.info(`Incoming A2A message: "${message}" (session: ${requestedSession || 'auto'})`);
+  logger.info(`━━━ A2A MESSAGE RECEIVED ━━━`);
+  logger.info(`  Message: "${message}"`);
+  logger.info(`  Requested session: ${requestedSession || '(auto-detect)'}`);
 
   // Find the right bot session
   const sessionId = resolveSession(requestedSession);
   if (!sessionId) {
-    logger.warn('No active bot session found for A2A message');
+    const activeSessions = BotManager.getActiveSessions();
+    logger.warn(`  No active bot session found (total sessions: ${activeSessions.length})`);
     return {
       success: false,
-      error: 'No active bot session. Create a bot session first (POST /api/sessions).',
+      error: 'No active bot session. The bot needs to be connected first — try saying "join the game".',
     };
   }
 
+  logger.info(`  Resolved session: ${sessionId}`);
+
   const bot = BotManager.getBot(sessionId);
   if (!bot) {
+    logger.error(`  Bot not found for session: ${sessionId}`);
     return {
       success: false,
       error: `Bot session "${sessionId}" not found.`,
     };
   }
 
+  logger.info(`  Bot: ${bot.username} at (${Math.round(bot.position?.x || 0)}, ${Math.round(bot.position?.y || 0)}, ${Math.round(bot.position?.z || 0)})`);
+
   const llm = getLLMClient();
   if (!llm) {
+    logger.error('  LLM not configured');
     return {
       success: false,
-      error: 'LLM not configured on game agent.',
+      error: 'LLM not configured on game agent. Set API keys in .env.',
     };
   }
 
-  try {
-    const result = await handleMessage(sessionId, bot, llm, message);
+  logger.info(`  LLM: ${llm.name} / ${llm.model}`);
+  logger.info(`  Processing message through handleMessage...`);
 
-    logger.info(
-      `A2A response: "${result.response.substring(0, 100)}..." ` +
-        `(tools: ${result.toolsExecuted.length}, planning: ${result.usedPlanning})`
-    );
+  try {
+    const startTime = Date.now();
+    const result = await handleMessage(sessionId, bot, llm, message);
+    const elapsed = Date.now() - startTime;
+
+    const toolNames = result.toolsExecuted.map(t => t.name).join(', ') || '(none)';
+
+    logger.info(`━━━ A2A RESPONSE (${elapsed}ms) ━━━`);
+    logger.info(`  Response: "${result.response.substring(0, 200)}${result.response.length > 200 ? '...' : ''}"`);
+    logger.info(`  Tools: ${toolNames}`);
+    logger.info(`  LLM calls: ${result.llmCalls}, Planning: ${result.usedPlanning}`);
 
     return {
       success: true,
@@ -89,7 +102,9 @@ export async function handleA2AMessage(
       usedPlanning: result.usedPlanning,
     };
   } catch (error) {
-    logger.error(`A2A message handling failed: ${(error as Error).message}`);
+    logger.error(`━━━ A2A ERROR ━━━`);
+    logger.error(`  ${(error as Error).message}`);
+    logger.error(`  Stack: ${(error as Error).stack?.split('\n').slice(0, 3).join(' → ')}`);
     return {
       success: false,
       error: `Failed to process message: ${(error as Error).message}`,
@@ -106,10 +121,13 @@ function resolveSession(requestedSession?: string): string | null {
   if (requestedSession) {
     const bot = BotManager.getBot(requestedSession);
     if (bot) return requestedSession;
+    logger.warn(`  Requested session "${requestedSession}" not found, falling back to auto-detect`);
   }
 
   // Otherwise, find the first active session
   const sessions = BotManager.getActiveSessions();
+  logger.info(`  Active sessions: ${sessions.length > 0 ? sessions.join(', ') : '(none)'}`);
+
   if (sessions.length > 0) {
     return sessions[0];
   }

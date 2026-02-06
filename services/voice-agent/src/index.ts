@@ -97,6 +97,40 @@ app.get('/health', (_req, res) => {
 // Room token generation (no auth for now)
 app.use('/api/room-token', createRoomTokenRouter());
 
+// ── Diagnostic: test tool definitions ────────────────────────────────────
+// GET  /api/debug/tools         → list registered tool names & descriptions
+// POST /api/debug/tools/:name   → manually call a tool (bypasses LLM)
+app.get('/api/debug/tools', async (_req, res) => {
+  try {
+    // Dynamic import so it only loads when called
+    const { gameTools } = await import('./tools/game-tools.js');
+    const tools = Object.entries(gameTools).map(([name, tool]) => ({
+      name,
+      description: (tool as any).description || '(none)',
+      hasParameters: !!(tool as any).parameters,
+    }));
+    res.json({ success: true, count: tools.length, tools });
+  } catch (error) {
+    res.json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.post('/api/debug/tools/:name', async (req, res) => {
+  try {
+    const { gameTools } = await import('./tools/game-tools.js');
+    const tool = (gameTools as any)[req.params.name];
+    if (!tool) {
+      return res.json({ success: false, error: `Tool "${req.params.name}" not found`, available: Object.keys(gameTools) });
+    }
+    console.log(`[Debug] Manually calling tool: ${req.params.name}`, req.body);
+    const result = await tool.execute(req.body || {});
+    console.log(`[Debug] Tool result:`, result);
+    res.json({ success: true, tool: req.params.name, result });
+  } catch (error) {
+    res.json({ success: false, error: (error as Error).message });
+  }
+});
+
 // ============================================================================
 // HTTP Server
 // ============================================================================

@@ -1,10 +1,9 @@
 /**
  * Conversational Agent
  *
- * Voice-enabled agent using LiveKit Agent framework.
+ * Adapted from readyplayerx voice-agent pattern.
  * Pipeline: Silero VAD → Deepgram STT → LLM → ElevenLabs TTS
- *
- * Communicates with the game agent via A2A (HTTP) tools.
+ * Tools: A2A game tools for Minecraft bot control.
  */
 
 import {
@@ -20,96 +19,133 @@ import * as openai from '@livekit/agents-plugin-openai';
 
 import { VOICE_INSTRUCTIONS } from './prompt.js';
 import { gameTools } from '../tools/game-tools.js';
+import { agentLog, agentError } from '../utils/logger.js';
+
+agentLog('[Agent] Module loaded');
 
 // ============================================================================
 // LiveKit Agent Definition
+// (Matches readyplayerx/voice-agent pattern exactly)
 // ============================================================================
 
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
-    // Pre-load VAD model during warmup for faster first response
-    proc.userData.vad = await silero.VAD.load();
+    proc.userData.vadLoaded = true;
+    agentLog('[Agent] prewarm done');
   },
 
   entry: async (ctx: JobContext) => {
     const sessionId = ctx.room.name || ctx.job.id;
 
+    // Connect to the room FIRST (before anything else)
     await ctx.connect();
+    agentLog(`[Agent] Connected to room: ${sessionId}`);
 
-    console.log(`[VoiceAgent] Session started: ${sessionId}, waiting for participant...`);
+    // ── Duplicate agent guard (from readyplayerx) ─────────────────────────
+    // If another agent is already in this room, exit immediately.
+    const participants = Array.from(ctx.room.remoteParticipants.values());
+    const existingAgents = participants.filter(
+      (p) => p.identity?.includes('agent') || (p as any).kind === 'AGENT'
+    );
+    if (existingAgents.length > 0) {
+      agentLog(`[Agent] Skipping — room already has an agent (${existingAgents.map(p => p.identity).join(', ')})`);
+      return;
+    }
 
-    // Wait for a human participant to join the room
-    // This is CRITICAL - without it the agent doesn't know whose audio to listen to
-    const participant = await ctx.waitForParticipant();
-    console.log(`[VoiceAgent] Participant joined: ${participant.identity}`);
-
-    // ── Voice Activity Detection ──────────────────────────────────────────
+    // ── VAD ────────────────────────────────────────────────────────────────
     const vad = await silero.VAD.load();
 
-    // ── Speech-to-Text (Deepgram Nova 3) ──────────────────────────────────
+    // ── STT (Deepgram Nova 3) ─────────────────────────────────────────────
     const stt = new deepgram.STT({
       model: 'nova-3',
       apiKey: process.env.DEEPGRAM_API_KEY,
     });
 
-    // ── LLM (OpenAI-compatible — works with Groq, OpenAI, etc.) ───────────
+    // ── LLM (OpenAI-compatible, must support tool/function calling) ───────
+    const llmApiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+    const llmBaseURL = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
+    const llmModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    const llmTemp = parseFloat(process.env.LLM_TEMPERATURE || '0.7');
+
+    agentLog(`[Agent] LLM: ${llmModel} @ ${llmBaseURL} (temp=${llmTemp}, key=${llmApiKey ? 'present' : 'MISSING'})`);
+
     const llm = new openai.LLM({
-      apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY,
-      baseURL: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
-      model: process.env.LLM_MODEL || 'gpt-4o-mini',
+      apiKey: llmApiKey,
+      baseURL: llmBaseURL,
+      model: llmModel,
+      temperature: llmTemp,
     });
 
-    // ── Text-to-Speech (ElevenLabs) ───────────────────────────────────────
+    // ── TTS (ElevenLabs) ──────────────────────────────────────────────────
     const tts = new elevenlabs.TTS({
       model: process.env.TTS_MODEL || 'eleven_flash_v2_5',
       voiceId: process.env.TTS_VOICE_ID || 'X3fJc68cSPDZeyn9uKoS',
       apiKey: process.env.ELEVEN_API_KEY,
     });
 
-    // ── Agent Session ─────────────────────────────────────────────────────
+    // ── Log tool registration ─────────────────────────────────────────────
+    const toolNames = Object.keys(gameTools);
+    agentLog(`[Agent] Tools (${toolNames.length}): [${toolNames.join(', ')}]`);
+
+    // ── Agent Session (voice pipeline) ────────────────────────────────────
     const session = new voice.AgentSession({
       llm: llm as any,
       stt,
       tts,
       vad,
+      voiceOptions: {
+        maxToolSteps: 10,
+      },
     });
 
-    // ── Agent (with system prompt + game tools) ─────────────────────────
+    // ── Agent (instructions + tools) ──────────────────────────────────────
     const agent = new voice.Agent({
       instructions: VOICE_INSTRUCTIONS,
       llm: llm as any,
       tools: gameTools,
     });
 
-    console.log(`[VoiceAgent] [${sessionId}] Loaded ${Object.keys(gameTools).length} game tools: ${Object.keys(gameTools).join(', ')}`);
-
     // ── Event Logging ─────────────────────────────────────────────────────
 
     session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
       if (event.isFinal) {
-        console.log(`[VoiceAgent] [${sessionId}] User: "${event.transcript}"`);
+        agentLog(`🎤 User: "${event.transcript}"`);
       }
     });
 
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (event) => {
       const item = event.item;
       if (item.role === 'assistant' && item.textContent) {
-        console.log(`[VoiceAgent] [${sessionId}] Dory: "${item.textContent}"`);
+        agentLog(`🤖 Dory: "${item.textContent}"`);
+      }
+    });
+
+    session.on(voice.AgentSessionEventTypes.AgentStateChanged, (event) => {
+      agentLog(`State: ${event.oldState} → ${event.newState}`);
+    });
+
+    session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, (event) => {
+      for (let i = 0; i < event.functionCalls.length; i++) {
+        const call = event.functionCalls[i];
+        const output = event.functionCallOutputs[i];
+        const preview = output?.output
+          ? output.output.substring(0, 200)
+          : '(no output)';
+        agentLog(`🔧 Tool: ${call.name}(${call.args}) → ${output?.isError ? '❌ ' : '✅ '}${preview}`);
       }
     });
 
     session.on(voice.AgentSessionEventTypes.Error, (event) => {
-      console.error(`[VoiceAgent] [${sessionId}] Error:`, event.error);
+      agentError('[Agent] Session error', event.error);
     });
 
-    // ── Start ─────────────────────────────────────────────────────────────
+    // ── Start the session (no waitForParticipant — session handles it) ────
     await session.start({ agent, room: ctx.room });
-    console.log(`[VoiceAgent] [${sessionId}] Agent is live and listening`);
+    agentLog(`[Agent] ✅ Agent is LIVE — session=${sessionId}, tools=[${toolNames.join(', ')}]`);
 
     // ── Shutdown ──────────────────────────────────────────────────────────
     ctx.addShutdownCallback(async () => {
-      console.log(`[VoiceAgent] [${sessionId}] Session ending`);
-      // Future: send final context to game agent, persist history, etc.
+      agentLog(`[Agent] Session ending: ${sessionId}`);
     });
   },
 });
