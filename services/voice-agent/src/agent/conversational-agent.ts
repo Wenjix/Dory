@@ -4,10 +4,7 @@
  * Voice-enabled agent using LiveKit Agent framework.
  * Pipeline: Silero VAD → Deepgram STT → LLM → ElevenLabs TTS
  *
- * Simplified from readyplayerx:
- * - No auth, no A2A (yet), no database
- * - Pure voice conversation with Dory personality
- * - Room for future A2A tools and game event injection
+ * Communicates with the game agent via A2A (HTTP) tools.
  */
 
 import {
@@ -22,6 +19,7 @@ import * as silero from '@livekit/agents-plugin-silero';
 import * as openai from '@livekit/agents-plugin-openai';
 
 import { VOICE_INSTRUCTIONS } from './prompt.js';
+import { gameTools } from '../tools/game-tools.js';
 
 // ============================================================================
 // LiveKit Agent Definition
@@ -76,13 +74,14 @@ export default defineAgent({
       vad,
     });
 
-    // ── Agent (with system prompt) ────────────────────────────────────────
-    // Future: inject A2A tools here via the `tools` option
+    // ── Agent (with system prompt + game tools) ─────────────────────────
     const agent = new voice.Agent({
       instructions: VOICE_INSTRUCTIONS,
       llm: llm as any,
-      // tools: [], // A2A tools will go here later
+      tools: gameTools,
     });
+
+    console.log(`[VoiceAgent] [${sessionId}] Loaded ${Object.keys(gameTools).length} game tools: ${Object.keys(gameTools).join(', ')}`);
 
     // ── Event Logging ─────────────────────────────────────────────────────
 

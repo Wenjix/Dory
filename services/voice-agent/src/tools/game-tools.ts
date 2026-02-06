@@ -1,0 +1,244 @@
+/**
+ * Game Agent Tools
+ *
+ * LLM-callable tools that let the voice agent (Dory)
+ * communicate with the game agent to perform Minecraft actions.
+ *
+ * Uses simple HTTP calls to the game agent's A2A endpoints.
+ */
+
+import { llm } from '@livekit/agents';
+import { z } from 'zod';
+
+// ── Configuration ─────────────────────────────────────────────────────────
+
+const GAME_AGENT_URL = process.env.GAME_AGENT_URL || 'http://localhost:3000';
+
+// ── Tool: Connect Bot ─────────────────────────────────────────────────────
+
+const connectBot = llm.tool({
+  description:
+    'Connect a Minecraft bot to a server. Use this when the player asks to join or connect to a game. ' +
+    'If no server details are given, defaults to localhost:25565.',
+  parameters: z.object({
+    botName: z
+      .string()
+      .optional()
+      .describe('Name for the bot. Defaults to "DoryBot".'),
+    serverHost: z
+      .string()
+      .optional()
+      .describe('Minecraft server host. Defaults to "localhost".'),
+    serverPort: z
+      .number()
+      .optional()
+      .describe('Minecraft server port. Defaults to 25565.'),
+  }),
+  execute: async ({ botName, serverHost, serverPort }) => {
+    const name = botName || 'DoryBot';
+    const host = serverHost || 'localhost';
+    const port = serverPort || 25565;
+
+    console.log(`[GameTools] Connecting bot "${name}" to ${host}:${port}`);
+
+    try {
+      const response = await fetch(`${GAME_AGENT_URL}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverHost: host, serverPort: port, botName: name }),
+      });
+
+      const data: any = await response.json();
+
+      if (data.success) {
+        console.log(`[GameTools] Bot connected: session ${data.sessionId}`);
+        return `Bot "${name}" connected to ${host}:${port} successfully! Session: ${data.sessionId}`;
+      } else {
+        return `Failed to connect: ${data.error || 'Unknown error'}`;
+      }
+    } catch (error) {
+      const msg = (error as Error).message;
+      if (msg.includes('ECONNREFUSED')) {
+        return 'Game agent is not running. Start the game agent first.';
+      }
+      return `Error connecting bot: ${msg}`;
+    }
+  },
+});
+
+// ── Tool: Disconnect Bot ──────────────────────────────────────────────────
+
+const disconnectBot = llm.tool({
+  description:
+    'Disconnect the Minecraft bot from the server. Use when the player wants the bot to leave the game.',
+  execute: async () => {
+    console.log(`[GameTools] Disconnecting bot...`);
+
+    try {
+      // First get active sessions to find the session ID
+      const sessionsRes = await fetch(`${GAME_AGENT_URL}/api/a2a/sessions`);
+      const sessionsData: any = await sessionsRes.json();
+
+      if (!sessionsData.sessions?.length) {
+        return 'No bot is currently connected.';
+      }
+
+      const sessionId = sessionsData.sessions[0].sessionId;
+      const botName = sessionsData.sessions[0].botName;
+
+      const response = await fetch(`${GAME_AGENT_URL}/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+
+      const data: any = await response.json();
+
+      if (data.success) {
+        console.log(`[GameTools] Bot "${botName}" disconnected`);
+        return `Bot "${botName}" has been disconnected from the server.`;
+      } else {
+        return `Failed to disconnect: ${data.error || 'Unknown error'}`;
+      }
+    } catch (error) {
+      return `Error disconnecting bot: ${(error as Error).message}`;
+    }
+  },
+});
+
+// ── Tool: Send Game Command ───────────────────────────────────────────────
+
+const sendGameCommand = llm.tool({
+  description:
+    'Send a command to the Minecraft game agent to perform an in-game action. ' +
+    'Use natural language describing what you want the bot to do. ' +
+    'Examples: "follow the player", "collect 5 wood", "craft a crafting table", ' +
+    '"build a wall where the player is looking", "what is in the inventory?"',
+  parameters: z.object({
+    command: z
+      .string()
+      .describe(
+        'The natural language command for the game agent. Be specific about what to do.'
+      ),
+  }),
+  execute: async ({ command }) => {
+    console.log(`[GameTools] Sending command to game agent: "${command}"`);
+
+    try {
+      const response = await fetch(`${GAME_AGENT_URL}/api/a2a/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: command }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[GameTools] Game agent error (${response.status}): ${errorText}`);
+        return `Game agent error: ${response.status}. ${errorText}`;
+      }
+
+      const data: any = await response.json();
+
+      if (data.success) {
+        const tools = data.toolsExecuted?.length
+          ? ` (actions: ${data.toolsExecuted.map((t: any) => t.name).join(', ')})`
+          : '';
+        console.log(`[GameTools] Response: "${data.response}"${tools}`);
+        return data.response || 'Command executed successfully.';
+      } else {
+        console.warn(`[GameTools] Command failed: ${data.error}`);
+        return `Failed: ${data.error || 'Unknown error'}`;
+      }
+    } catch (error) {
+      const msg = (error as Error).message;
+      console.error(`[GameTools] Network error: ${msg}`);
+
+      if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) {
+        return 'The game agent is not running. Make sure the game agent service is started.';
+      }
+      return `Error communicating with game agent: ${msg}`;
+    }
+  },
+});
+
+// ── Tool: Get Game Status ─────────────────────────────────────────────────
+
+const getGameStatus = llm.tool({
+  description:
+    'Check if the game agent is running and list active Minecraft bot sessions. ' +
+    'Use this to verify connectivity or see what bots are online.',
+  execute: async () => {
+    console.log(`[GameTools] Checking game agent status...`);
+
+    try {
+      const response = await fetch(`${GAME_AGENT_URL}/api/a2a/sessions`);
+
+      if (!response.ok) {
+        return `Game agent returned status ${response.status}`;
+      }
+
+      const data: any = await response.json();
+
+      if (data.count === 0) {
+        return 'Game agent is running but no Minecraft bots are connected. A bot session needs to be created first.';
+      }
+
+      const sessionList = data.sessions
+        .map(
+          (s: any) =>
+            `- ${s.botName || 'Bot'} (session: ${s.sessionId?.substring(0, 8) || 'unknown'}...)`
+        )
+        .join('\n');
+
+      return `Game agent is online with ${data.count} active bot(s):\n${sessionList}`;
+    } catch (error) {
+      const msg = (error as Error).message;
+      if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) {
+        return 'Game agent is not running. It needs to be started separately.';
+      }
+      return `Error checking game status: ${msg}`;
+    }
+  },
+});
+
+// ── Tool: Get Agent Capabilities ──────────────────────────────────────────
+
+const getGameCapabilities = llm.tool({
+  description:
+    'Discover what the Minecraft game agent can do. Returns a list of skills and example commands.',
+  execute: async () => {
+    console.log(`[GameTools] Fetching game agent capabilities...`);
+
+    try {
+      const response = await fetch(
+        `${GAME_AGENT_URL}/.well-known/agent-card.json`
+      );
+
+      if (!response.ok) {
+        return 'Could not fetch game agent capabilities.';
+      }
+
+      const card: any = await response.json();
+      const skills = card.skills || [];
+
+      const desc = skills
+        .map(
+          (s: any) =>
+            `${s.name}: ${s.description} (examples: ${(s.examples || []).join(', ')})`
+        )
+        .join('\n');
+
+      return `Game Agent: ${card.description}\n\nSkills:\n${desc}`;
+    } catch (error) {
+      return `Error fetching capabilities: ${(error as Error).message}`;
+    }
+  },
+});
+
+// ── Export as ToolContext (name → tool dictionary) ─────────────────────────
+
+export const gameTools: llm.ToolContext = {
+  connectBot,
+  disconnectBot,
+  sendGameCommand,
+  getGameStatus,
+  getGameCapabilities,
+};

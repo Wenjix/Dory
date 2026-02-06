@@ -68,6 +68,10 @@ if (missingOptional.length > 0) {
   console.warn('Some features may not work without these.');
 }
 
+// A2A Game Agent
+const gameAgentUrl = process.env.GAME_AGENT_URL || 'http://localhost:3000';
+console.log(`Game Agent URL: ${gameAgentUrl}`);
+
 // ============================================================================
 // Express App
 // ============================================================================

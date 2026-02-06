@@ -5,8 +5,10 @@ import { BotManager } from './bot/bot-manager';
 import { v4 as uuidv4 } from 'uuid';
 import { handleMessage } from './agent';
 import { getLLMClient } from './llm';
+import { GAME_AGENT_CARD } from './a2a/agent-card';
+import { handleA2AMessage } from './a2a/a2a-handler';
 
-const logger = createLogger('game-agent-server');
+const logger = createLogger('GameAgentServer');
 
 export function createServer(): Express {
   const app = express();
@@ -168,6 +170,48 @@ export function createServer(): Express {
         error: `AI error: ${(error as Error).message}`,
       });
     }
+  });
+
+  // ── A2A: Agent Card (discovery) ──────────────────────────────────────────
+  app.get('/.well-known/agent-card.json', (req: Request, res: Response) => {
+    const host = req.headers.host || `localhost:${req.socket.localPort}`;
+    const protocol = req.protocol || 'http';
+    res.json({
+      ...GAME_AGENT_CARD,
+      url: `${protocol}://${host}`,
+    });
+  });
+
+  // ── A2A: Receive message from another agent ────────────────────────────
+  app.post('/api/a2a/message', async (req: Request, res: Response) => {
+    const { message, sessionId } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ success: false, error: 'Missing "message" in request body' });
+      return;
+    }
+
+    const result = await handleA2AMessage({ message, sessionId });
+    res.json(result);
+  });
+
+  // ── A2A: List active bot sessions (for voice agent to pick) ────────────
+  app.get('/api/a2a/sessions', (_req: Request, res: Response) => {
+    const sessionIds = BotManager.getActiveSessions();
+    const sessions = sessionIds.map((id) => {
+      const bot = BotManager.getBot(id);
+      return {
+        sessionId: id,
+        botName: bot?.username || 'Unknown',
+        position: bot?.position || null,
+        health: bot?.health || 0,
+      };
+    });
+    res.json({
+      success: true,
+      count: sessions.length,
+      sessions,
+    });
   });
 
   // 404 handler
