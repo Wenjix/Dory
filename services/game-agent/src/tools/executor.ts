@@ -157,6 +157,46 @@ const handlers: Record<string, ToolHandler> = {
     return craftItem(bot, item_name, count);
   },
 
+  drop_item: async (bot, args) => {
+    const { item_name, count = -1 } = args;
+    const items = bot.bot.inventory.items();
+    const matching = items.filter((i: any) => i.name === item_name || i.name.includes(item_name));
+
+    if (matching.length === 0) {
+      return { success: false, message: `Don't have any ${item_name} in inventory` };
+    }
+
+    let totalDropped = 0;
+    const toDrop = count === -1 ? Infinity : count;
+
+    for (const item of matching) {
+      if (totalDropped >= toDrop) break;
+      const dropCount = Math.min(item.count, toDrop - totalDropped);
+      try {
+        await bot.bot.tossStack(item);
+        totalDropped += item.count;
+      } catch {
+        // tossStack drops the whole stack; if we need partial, use toss()
+        try {
+          await bot.bot.toss(item.type, item.metadata, dropCount);
+          totalDropped += dropCount;
+        } catch (err) {
+          return {
+            success: totalDropped > 0,
+            message: totalDropped > 0
+              ? `Dropped ${totalDropped}x ${item_name} (error on remaining: ${(err as Error).message})`
+              : `Failed to drop ${item_name}: ${(err as Error).message}`,
+          };
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: `Dropped ${totalDropped}x ${item_name}`,
+    };
+  },
+
   eat_food: async (bot) => {
     return eatFood(bot);
   },

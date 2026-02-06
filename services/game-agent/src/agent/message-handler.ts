@@ -41,8 +41,39 @@ function getHistory(sessionId: string): ChatMessage[] {
   return sessionHistories.get(sessionId)!;
 }
 
+/**
+ * Trim conversation history while keeping tool_use / tool_result pairs intact.
+ *
+ * Anthropic requires that every `tool_result` has a matching `tool_use` in the
+ * preceding assistant message. Naively shifting messages off the front can orphan
+ * tool_result blocks, causing a 400 error.
+ *
+ * Strategy: remove messages from the front, but if we remove an assistant message
+ * with tool_calls, also remove all its subsequent tool-result messages.
+ */
 function trimHistory(history: ChatMessage[]): void {
   while (history.length > MAX_HISTORY_MESSAGES) {
+    const removed = history.shift();
+    if (!removed) break;
+
+    // If we removed an assistant message that had tool_calls,
+    // also remove all immediately-following tool messages that reference those calls.
+    if (removed.role === 'assistant' && removed.tool_calls?.length) {
+      const toolCallIds = new Set(removed.tool_calls.map((tc: any) => tc.id));
+      while (
+        history.length > 0 &&
+        history[0].role === 'tool' &&
+        history[0].tool_call_id &&
+        toolCallIds.has(history[0].tool_call_id)
+      ) {
+        history.shift();
+      }
+    }
+  }
+
+  // Safety net: if history starts with orphaned tool messages, remove them.
+  // This handles edge cases where tool_result messages ended up at the start.
+  while (history.length > 0 && history[0].role === 'tool') {
     history.shift();
   }
 }
@@ -180,11 +211,8 @@ async function handleWithPlanning(
   userMessage: string,
   history: ChatMessage[]
 ): Promise<HandleMessageResult> {
-  const toolsExecuted: HandleMessageResult['toolsExecuted'] = [];
-  let llmCalls = 0;
-
   try {
-    // Create a plan
+    // ── Step 1: Create the plan (fast — single LLM call) ────────────────
     logger.info(`[${sessionId}] Creating plan for: "${userMessage}"`);
     const plan = await createPlan(
       { userRequest: userMessage },
@@ -192,47 +220,40 @@ async function handleWithPlanning(
       llm,
       sessionId
     );
-    llmCalls++;
 
     logger.info(
       `[${sessionId}] Plan created: ${plan.steps.map((s) => s.tool).join(' → ')}`
     );
 
-    // Execute the plan
-    const result = await executePlan(plan, bot, llm);
-
-    logger.info(`[${sessionId}] Plan result:\n${prettyJson({
-      success: result.success,
-      summary: result.summary,
-      error: result.error,
-    })}`);
-
-    // Collect tool execution info from plan steps
-    for (const step of plan.steps) {
-      if (step.status === 'completed' || step.status === 'failed') {
-        toolsExecuted.push({
-          name: step.tool,
-          args: step.parameters,
-          result: step.result?.data?.message || step.error || '',
-        });
-      }
-    }
-
-    // Generate a response based on the plan result
-    const response = result.success
-      ? plan.reasoning || result.summary
-      : `I had trouble: ${result.error || result.summary}`;
+    // ── Step 2: Build a natural narration of the plan ───────────────────
+    const narration = buildPlanNarration(plan);
+    logger.info(`[${sessionId}] Plan narration: "${narration}"`);
 
     // Save to conversation history
-    history.push({ role: 'assistant', content: response });
+    history.push({ role: 'assistant', content: narration });
     trimHistory(history);
 
+    // ── Step 3: Execute the plan in the background (don't block) ────────
+    // The voice agent gets the narration immediately.
+    // Execution continues asynchronously.
+    executePlan(plan, bot, llm)
+      .then((result) => {
+        logger.info(`[${sessionId}] Background plan result:\n${prettyJson({
+          success: result.success,
+          summary: result.summary,
+          error: result.error,
+        })}`);
+      })
+      .catch((err) => {
+        logger.error(`[${sessionId}] Background plan failed: ${(err as Error).message}`);
+      });
+
     return {
-      response,
-      toolsExecuted,
-      llmCalls,
+      response: narration,
+      toolsExecuted: [],
+      llmCalls: 1,
       usedPlanning: true,
-      planSummary: `${plan.steps.length} steps, ${result.success ? 'success' : 'failed'}: ${result.summary}`,
+      planSummary: `${plan.steps.length} steps: ${plan.steps.map((s) => s.tool).join(' → ')}`,
     };
   } catch (err) {
     const errorMsg = (err as Error).message;
@@ -249,6 +270,86 @@ async function handleWithPlanning(
     );
     fallbackResult.usedPlanning = false;
     return fallbackResult;
+  }
+}
+
+// ─── Plan Narration Builder ──────────────────────────────────────────────────
+
+/**
+ * Build a natural-sounding narration of the plan for the voice agent.
+ * Uses the plan's reasoning + step descriptions to create something
+ * Dory can say out loud, e.g.:
+ *   "Alright! First I'll collect some oak logs, then craft them into planks."
+ */
+function buildPlanNarration(plan: { reasoning?: string; steps: Array<{ tool: string; parameters: Record<string, any>; expectedOutcome?: string }> }): string {
+  // Use the LLM's reasoning if it's a good summary
+  if (plan.reasoning && plan.reasoning.length > 10 && plan.reasoning.length < 200) {
+    return plan.reasoning;
+  }
+
+  // Otherwise build from steps
+  const stepDescriptions = plan.steps.map((step, i) => {
+    return describeStep(step.tool, step.parameters, i, plan.steps.length);
+  });
+
+  if (stepDescriptions.length === 0) {
+    return "Let me work on that for you!";
+  }
+
+  if (stepDescriptions.length === 1) {
+    return `On it! I'll ${stepDescriptions[0]}.`;
+  }
+
+  // "First I'll X, then Y, and finally Z."
+  const first = stepDescriptions[0];
+  const rest = stepDescriptions.slice(1, -1);
+  const last = stepDescriptions[stepDescriptions.length - 1];
+
+  let narration = `Here's my plan: first I'll ${first}`;
+  for (const mid of rest) {
+    narration += `, then ${mid}`;
+  }
+  narration += `, and finally ${last}. Let me get started!`;
+
+  return narration;
+}
+
+/**
+ * Describe a single plan step in natural language.
+ */
+function describeStep(tool: string, params: Record<string, any>, _index: number, _total: number): string {
+  switch (tool) {
+    case 'collect_resource':
+      return `collect ${params.count || 'some'} ${params.block_type || 'blocks'}`;
+    case 'craft_item':
+      return `craft ${params.count || ''} ${params.item_name || 'an item'}`.trim();
+    case 'go_to_player':
+    case 'come_to_me':
+      return `come to you`;
+    case 'follow_player':
+      return `follow you`;
+    case 'go_to_position':
+      return `go to (${params.x}, ${params.y}, ${params.z})`;
+    case 'place_block':
+      return `place ${params.block_type || 'a block'}`;
+    case 'build_pillar':
+      return `build a ${params.height || 3}-block pillar`;
+    case 'build_wall':
+      return `build a wall`;
+    case 'get_inventory':
+      return `check inventory`;
+    case 'look_around':
+      return `look around`;
+    case 'equip_item':
+      return `equip ${params.item_name || 'an item'}`;
+    case 'drop_item':
+      return `drop ${params.count === -1 ? 'all' : params.count || 'some'} ${params.item_name || 'items'}`;
+    case 'eat':
+      return `eat something`;
+    case 'stop':
+      return `stop what I'm doing`;
+    default:
+      return tool.replace(/_/g, ' ');
   }
 }
 

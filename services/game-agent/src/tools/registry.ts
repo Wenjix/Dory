@@ -227,6 +227,30 @@ const craftItem: ToolDefinition = {
   },
 };
 
+const dropItem: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'drop_item',
+    description:
+      'Drop/throw items from the bot\'s inventory onto the ground. Useful for giving items to a player, clearing inventory, or discarding unwanted items.',
+    parameters: {
+      type: 'object',
+      properties: {
+        item_name: {
+          type: 'string',
+          description: 'The Minecraft item name to drop (e.g. "cobblestone", "oak_log", "diamond")',
+        },
+        count: {
+          type: 'number',
+          description: 'How many to drop. Use -1 to drop all of that item.',
+          default: -1,
+        },
+      },
+      required: ['item_name'],
+    },
+  },
+};
+
 const eatFood: ToolDefinition = {
   type: 'function',
   function: {
@@ -590,7 +614,7 @@ const sendChat: ToolDefinition = {
 export const TOOL_CATEGORIES = {
   movement: [followPlayer, comeToMe, goToPosition, stopAction],
   collection: [collectResource, breakBlock],
-  inventory: [getInventory, hasItem, equipItem, craftItem, eatFood],
+  inventory: [getInventory, hasItem, equipItem, craftItem, dropItem, eatFood],
   storage: [storeInChest, getFromChest, listChestContents],
   building: [placeBlock, buildPillar, buildWall, buildFloor],
   playerBuilding: [

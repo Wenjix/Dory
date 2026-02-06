@@ -19,9 +19,6 @@ import * as openai from '@livekit/agents-plugin-openai';
 
 import { VOICE_INSTRUCTIONS } from './prompt.js';
 import { gameTools } from '../tools/game-tools.js';
-import { agentLog, agentError } from '../utils/logger.js';
-
-agentLog('[Agent] Module loaded');
 
 // ============================================================================
 // LiveKit Agent Definition
@@ -31,7 +28,6 @@ agentLog('[Agent] Module loaded');
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
     proc.userData.vadLoaded = true;
-    agentLog('[Agent] prewarm done');
   },
 
   entry: async (ctx: JobContext) => {
@@ -39,16 +35,15 @@ export default defineAgent({
 
     // Connect to the room FIRST (before anything else)
     await ctx.connect();
-    agentLog(`[Agent] Connected to room: ${sessionId}`);
+    console.log(`🎮 Agent session started: ${sessionId}`);
 
     // ── Duplicate agent guard (from readyplayerx) ─────────────────────────
-    // If another agent is already in this room, exit immediately.
     const participants = Array.from(ctx.room.remoteParticipants.values());
     const existingAgents = participants.filter(
       (p) => p.identity?.includes('agent') || (p as any).kind === 'AGENT'
     );
     if (existingAgents.length > 0) {
-      agentLog(`[Agent] Skipping — room already has an agent (${existingAgents.map(p => p.identity).join(', ')})`);
+      console.log(`[Agent] Skipping — room already has an agent (${existingAgents.map(p => p.identity).join(', ')})`);
       return;
     }
 
@@ -65,15 +60,13 @@ export default defineAgent({
     const llmApiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
     const llmBaseURL = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
     const llmModel = process.env.LLM_MODEL || 'gpt-4o-mini';
-    const llmTemp = parseFloat(process.env.LLM_TEMPERATURE || '0.7');
 
-    agentLog(`[Agent] LLM: ${llmModel} @ ${llmBaseURL} (temp=${llmTemp}, key=${llmApiKey ? 'present' : 'MISSING'})`);
+    console.log(`[Agent] LLM: ${llmModel} @ ${llmBaseURL}`);
 
     const llm = new openai.LLM({
       apiKey: llmApiKey,
       baseURL: llmBaseURL,
       model: llmModel,
-      temperature: llmTemp,
     });
 
     // ── TTS (ElevenLabs) ──────────────────────────────────────────────────
@@ -82,10 +75,6 @@ export default defineAgent({
       voiceId: process.env.TTS_VOICE_ID || 'X3fJc68cSPDZeyn9uKoS',
       apiKey: process.env.ELEVEN_API_KEY,
     });
-
-    // ── Log tool registration ─────────────────────────────────────────────
-    const toolNames = Object.keys(gameTools);
-    agentLog(`[Agent] Tools (${toolNames.length}): [${toolNames.join(', ')}]`);
 
     // ── Agent Session (voice pipeline) ────────────────────────────────────
     const session = new voice.AgentSession({
@@ -99,6 +88,9 @@ export default defineAgent({
     });
 
     // ── Agent (instructions + tools) ──────────────────────────────────────
+    const toolNames = Object.keys(gameTools);
+    console.log(`[Agent] Tools (${toolNames.length}): [${toolNames.join(', ')}]`);
+
     const agent = new voice.Agent({
       instructions: VOICE_INSTRUCTIONS,
       llm: llm as any,
@@ -109,19 +101,19 @@ export default defineAgent({
 
     session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
       if (event.isFinal) {
-        agentLog(`🎤 User: "${event.transcript}"`);
+        console.log(`🎤 User: "${event.transcript}"`);
       }
     });
 
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (event) => {
       const item = event.item;
       if (item.role === 'assistant' && item.textContent) {
-        agentLog(`🤖 Dory: "${item.textContent}"`);
+        console.log(`🤖 Dory: "${item.textContent}"`);
       }
     });
 
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (event) => {
-      agentLog(`State: ${event.oldState} → ${event.newState}`);
+      console.log(`State: ${event.oldState} → ${event.newState}`);
     });
 
     session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, (event) => {
@@ -131,21 +123,21 @@ export default defineAgent({
         const preview = output?.output
           ? output.output.substring(0, 200)
           : '(no output)';
-        agentLog(`🔧 Tool: ${call.name}(${call.args}) → ${output?.isError ? '❌ ' : '✅ '}${preview}`);
+        console.log(`🔧 Tool: ${call.name}(${call.args}) → ${output?.isError ? '❌ ' : '✅ '}${preview}`);
       }
     });
 
     session.on(voice.AgentSessionEventTypes.Error, (event) => {
-      agentError('[Agent] Session error', event.error);
+      console.error('[Agent] Session error:', event.error);
     });
 
-    // ── Start the session (no waitForParticipant — session handles it) ────
+    // ── Start the session ──────────────────────────────────────────────────
     await session.start({ agent, room: ctx.room });
-    agentLog(`[Agent] ✅ Agent is LIVE — session=${sessionId}, tools=[${toolNames.join(', ')}]`);
+    console.log(`[Agent] ✅ Agent is LIVE — session=${sessionId}, tools=[${toolNames.join(', ')}]`);
 
     // ── Shutdown ──────────────────────────────────────────────────────────
     ctx.addShutdownCallback(async () => {
-      agentLog(`[Agent] Session ending: ${sessionId}`);
+      console.log(`[Agent] Session ending: ${sessionId}`);
     });
   },
 });

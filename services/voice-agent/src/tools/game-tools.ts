@@ -9,13 +9,12 @@
 
 import { llm } from '@livekit/agents';
 import { z } from 'zod';
-import { agentLog, agentError } from '../utils/logger.js';
 
 // ── Configuration ─────────────────────────────────────────────────────────
 
 const GAME_AGENT_URL = process.env.GAME_AGENT_URL || 'http://localhost:3000';
 
-agentLog('[GameTools] Module loaded', { GAME_AGENT_URL });
+console.log('[GameTools] Module loaded', { GAME_AGENT_URL });
 
 // ── Helper: HTTP call with full logging ───────────────────────────────────
 
@@ -25,7 +24,7 @@ async function callGameAgent(
   body?: Record<string, any>
 ): Promise<{ ok: boolean; status: number; data: any; error?: string }> {
   const url = `${GAME_AGENT_URL}${path}`;
-  agentLog(`[GameTools] → ${method} ${url}`, body);
+  console.log(`[GameTools] → ${method} ${url}`, body ? JSON.stringify(body) : '');
 
   try {
     const response = await fetch(url, {
@@ -42,12 +41,12 @@ async function callGameAgent(
       data = { raw: text };
     }
 
-    agentLog(`[GameTools] ← ${response.status}`, { preview: JSON.stringify(data).substring(0, 300) });
+    console.log(`[GameTools] ← ${response.status}`, JSON.stringify(data).substring(0, 300));
 
     return { ok: response.ok, status: response.status, data };
   } catch (error) {
     const msg = (error as Error).message;
-    agentError(`[GameTools] NETWORK ERROR`, error);
+    console.error(`[GameTools] NETWORK ERROR:`, msg);
 
     if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) {
       return {
@@ -86,7 +85,7 @@ const connectBot = llm.tool({
     const host = serverHost || 'localhost';
     const port = serverPort || 25565;
 
-    agentLog(`[GameTools] connectBot: "${name}" → ${host}:${port}`);
+    console.log(`[GameTools] connectBot: "${name}" → ${host}:${port}`);
 
     const { ok, data, error } = await callGameAgent('POST', '/api/sessions', {
       serverHost: host,
@@ -111,7 +110,7 @@ const disconnectBot = llm.tool({
     'Disconnect the Minecraft bot from the server. Use when the player wants the bot to leave the game.',
   parameters: z.object({}),
   execute: async () => {
-    agentLog(`[GameTools] disconnectBot: finding active session...`);
+    console.log(`[GameTools] disconnectBot: finding active session...`);
 
     const { ok: sessOk, data: sessData, error: sessError } = await callGameAgent(
       'GET',
@@ -126,7 +125,7 @@ const disconnectBot = llm.tool({
     const sessionId = sessData.sessions[0].sessionId;
     const botName = sessData.sessions[0].botName;
 
-    agentLog(`[GameTools] disconnectBot: disconnecting "${botName}" (${sessionId})`);
+    console.log(`[GameTools] disconnectBot: disconnecting "${botName}" (${sessionId})`);
 
     const { ok, data, error } = await callGameAgent('DELETE', `/api/sessions/${sessionId}`);
 
@@ -145,18 +144,20 @@ const disconnectBot = llm.tool({
 const sendGameCommand = llm.tool({
   description:
     'Send a command to the Minecraft game agent to perform an in-game action. ' +
-    'Use natural language describing what you want the bot to do. ' +
-    'Examples: "follow the player", "collect 5 wood", "craft a crafting table", ' +
-    '"build a wall where the player is looking", "what is in the inventory?"',
+    'IMPORTANT: Pass the player\'s FULL request with ALL details — quantities, materials, dimensions, locations, and any other specifics. ' +
+    'Do NOT shorten, summarize, or paraphrase. The game agent needs every detail to act correctly. ' +
+    'Examples: "collect 5 oak wood", "build a 3-block tall pillar using cobblestone where I am looking", ' +
+    '"craft 4 wooden planks", "follow me", "drop all the dirt"',
   parameters: z.object({
     command: z
       .string()
       .describe(
-        'The natural language command for the game agent. Be specific about what to do.'
+        'The COMPLETE, detailed command for the game agent. Include ALL specifics the player mentioned: ' +
+        'block types, quantities, heights, materials, directions, positions. Never omit details.'
       ),
   }),
   execute: async ({ command }) => {
-    agentLog(`[GameTools] sendGameCommand: "${command}"`);
+    console.log(`[GameTools] sendGameCommand: "${command}"`);
 
     const { ok, data, error } = await callGameAgent('POST', '/api/a2a/message', {
       message: command,
@@ -168,7 +169,7 @@ const sendGameCommand = llm.tool({
       const tools = data.toolsExecuted?.length
         ? ` (actions: ${data.toolsExecuted.map((t: any) => t.name).join(', ')})`
         : '';
-      agentLog(`[GameTools] sendGameCommand result: "${data.response?.substring(0, 150)}"${tools}`);
+      console.log(`[GameTools] sendGameCommand result: "${data.response?.substring(0, 150)}"${tools}`);
       return data.response || 'Command executed successfully.';
     } else {
       return `Failed: ${data?.error || JSON.stringify(data)}`;
@@ -184,7 +185,7 @@ const getGameStatus = llm.tool({
     'Use this to verify connectivity or see what bots are online.',
   parameters: z.object({}),
   execute: async () => {
-    agentLog(`[GameTools] getGameStatus`);
+    console.log(`[GameTools] getGameStatus`);
 
     const { ok, data, error } = await callGameAgent('GET', '/api/a2a/sessions');
 
@@ -213,7 +214,7 @@ const getGameCapabilities = llm.tool({
     'Discover what the Minecraft game agent can do. Returns a list of skills and example commands.',
   parameters: z.object({}),
   execute: async () => {
-    agentLog(`[GameTools] getGameCapabilities`);
+    console.log(`[GameTools] getGameCapabilities`);
 
     const { ok, data, error } = await callGameAgent(
       'GET',
@@ -235,6 +236,37 @@ const getGameCapabilities = llm.tool({
   },
 });
 
+// ── Tool: Drop Item ───────────────────────────────────────────────────────
+
+const dropItem = llm.tool({
+  description:
+    'Drop/throw items from the bot\'s inventory onto the ground. Useful for giving items to a player, clearing inventory, or discarding unwanted items.',
+  parameters: z.object({
+    item_name: z
+      .string()
+      .describe('The Minecraft item name to drop (e.g. "cobblestone", "oak_log", "diamond")'),
+    count: z
+      .number()
+      .describe('How many to drop. Use -1 to drop all of that item.')
+      .default(-1),
+  }),
+  execute: async ({ item_name, count = -1 }) => {
+    console.log(`[GameTools] dropItem: ${item_name} x${count}`);
+
+    const { ok, data, error } = await callGameAgent('POST', '/api/a2a/message', {
+      message: `drop ${count === -1 ? 'all' : count} ${item_name}`,
+    });
+
+    if (error) return error;
+
+    if (ok && data?.success) {
+      return data.response || `Dropped ${item_name}`;
+    } else {
+      return `Failed to drop items: ${data?.error || JSON.stringify(data)}`;
+    }
+  },
+});
+
 // ── Export as ToolContext (name → tool dictionary) ─────────────────────────
 
 export const gameTools: llm.ToolContext = {
@@ -243,6 +275,7 @@ export const gameTools: llm.ToolContext = {
   sendGameCommand,
   getGameStatus,
   getGameCapabilities,
+  dropItem,
 };
 
-agentLog('[GameTools] Tools registered', { tools: Object.keys(gameTools) });
+console.log('[GameTools] Tools registered:', Object.keys(gameTools));

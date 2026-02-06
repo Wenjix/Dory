@@ -128,7 +128,8 @@ export class MinecraftBot {
   }
 
   /**
-   * Go to a player's position (once, not continuous follow)
+   * Go to a player's position (once, not continuous follow).
+   * Uses async goto() (like readyplayerx) instead of setGoal+events.
    */
   async goToPlayer(username: string, range: number = 2): Promise<boolean> {
     const player = this.bot.players[username];
@@ -136,43 +137,27 @@ export class MinecraftBot {
       return false;
     }
 
-    const goal = new goals.GoalNear(player.entity.position.x, player.entity.position.y, player.entity.position.z, range);
-    this.bot.pathfinder.setGoal(goal);
+    const goal = new goals.GoalNear(
+      player.entity.position.x,
+      player.entity.position.y,
+      player.entity.position.z,
+      range
+    );
 
-    return new Promise((resolve) => {
-      const onGoalReached = () => {
-        cleanup();
-        resolve(true);
-      };
-
-      const onPathUpdate = (results: any) => {
-        if (results.status === 'noPath') {
-          cleanup();
-          resolve(false);
-        }
-      };
-
-      const cleanup = () => {
-        (this.bot.pathfinder as any).removeListener('goal_reached', onGoalReached);
-        (this.bot.pathfinder as any).removeListener('path_update', onPathUpdate);
-      };
-
-      (this.bot.pathfinder as any).on('goal_reached', onGoalReached);
-      (this.bot.pathfinder as any).on('path_update', onPathUpdate);
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        cleanup();
-        resolve(false);
-      }, 30000);
-    });
+    try {
+      await this.bot.pathfinder.goto(goal);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Collect blocks of a specific type.
    * - Finds NEAREST blocks first (sorted by distance)
    * - Respects count limit (capped at MAX_COLLECT)
-   * - Checks interruptFlag each iteration so stop() / follow() can cancel it
+   * - Verifies via inventory so it stops when target is actually reached
+   * - Checks interruptFlag BOTH before and after each collection
    */
   async collectBlock(blockType: string, count: number): Promise<{ state: boolean; message: string }> {
     if (!this.mcData) {
@@ -180,7 +165,7 @@ export class MinecraftBot {
     }
 
     // Cap count to a reasonable maximum
-    const MAX_COLLECT = 5;
+    const MAX_COLLECT = 10;
     const targetCount = Math.min(Math.max(count, 1), MAX_COLLECT);
 
     // Resolve block type aliases (common names → actual block names)
@@ -202,11 +187,23 @@ export class MinecraftBot {
     // Reset interrupt flag at the start of a new action
     this.interruptFlag = false;
 
+    // ── Track inventory so we know when we've ACTUALLY collected enough ──
+    const countMatchingItems = (): number => {
+      try {
+        return this.bot.inventory.items()
+          .filter((item: any) => blockTypes.some(bt => item.name.includes(bt)))
+          .reduce((sum: number, item: any) => sum + (item.count ?? 0), 0);
+      } catch {
+        return 0;
+      }
+    };
+
+    const initialCount = countMatchingItems();
     let collected = 0;
 
     try {
       for (let i = 0; i < targetCount; i++) {
-        // ── Check for interruption ──────────────────────────────────────
+        // ── Check for interruption BEFORE collecting ────────────────────
         if (this.interruptFlag) {
           this.interruptFlag = false;
           logger.info(`[${this.sessionId}] Collection interrupted after ${collected} blocks`);
@@ -218,11 +215,19 @@ export class MinecraftBot {
           };
         }
 
+        // ── Check if inventory already has enough ──────────────────────
+        const currentInventory = countMatchingItems();
+        const actualCollected = currentInventory - initialCount;
+        if (actualCollected >= targetCount) {
+          logger.info(`[${this.sessionId}] Already collected ${actualCollected} via inventory check`);
+          return { state: true, message: `Collected ${actualCollected}x ${blockType}` };
+        }
+
         // ── Find nearby blocks, sorted by distance ─────────────────────
         const positions = this.bot.findBlocks({
           matching: blockIds,
           maxDistance: 64,
-          count: 10, // Find several candidates
+          count: 10,
         });
 
         if (positions.length === 0) {
@@ -238,7 +243,6 @@ export class MinecraftBot {
           botPos.distanceTo(a) - botPos.distanceTo(b)
         );
 
-        // Get the nearest actual Block object
         const block = this.bot.blockAt(positions[0]);
         if (!block) {
           continue;
@@ -252,26 +256,41 @@ export class MinecraftBot {
           await (this.bot as any).collectBlock.collect(block);
           collected++;
         } catch (pluginError) {
-          // Fallback: navigate to block, dig it manually
           logger.warn(`[${this.sessionId}] Plugin failed, manual dig: ${(pluginError as Error).message}`);
           try {
             await this.manualCollect(block);
             collected++;
           } catch (manualError) {
             logger.warn(`[${this.sessionId}] Manual dig failed: ${(manualError as Error).message}`);
-            // Skip this block and try the next one
           }
         }
 
-        // Brief pause between collections (also lets interrupt flag take effect)
+        // ── Check interrupt AFTER collecting ────────────────────────────
+        if (this.interruptFlag) {
+          this.interruptFlag = false;
+          logger.info(`[${this.sessionId}] Collection interrupted after collect() — got ${collected} blocks`);
+          return {
+            state: collected > 0,
+            message: collected > 0
+              ? `Collected ${collected}/${targetCount}x ${blockType} (interrupted)`
+              : `Collection cancelled`,
+          };
+        }
+
+        // Brief pause between collections
         await new Promise((r) => setTimeout(r, 200));
       }
 
-      if (collected === 0) {
+      // Final inventory check
+      const finalCount = countMatchingItems();
+      const totalCollected = finalCount - initialCount;
+      logger.info(`[${this.sessionId}] Collection done: loop=${collected}, inventory_delta=${totalCollected}`);
+
+      if (totalCollected === 0 && collected === 0) {
         return { state: false, message: `Failed to collect any ${blockType}` };
       }
 
-      return { state: true, message: `Collected ${collected}x ${blockType}` };
+      return { state: true, message: `Collected ${totalCollected || collected}x ${blockType}` };
     } catch (error) {
       this.interruptFlag = false;
       if (collected > 0) {
