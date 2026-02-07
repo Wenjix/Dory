@@ -586,16 +586,52 @@ export async function updateDailySummary(
 
 /**
  * Called when a session ends.
- * Updates session summary, daily summary, and user profile.
+ *
+ * Because the voice agent and game agent use DIFFERENT sessionIds
+ * (LiveKit room name vs game-agent UUID), we don't just summarise
+ * the provided sessionId.  Instead we discover ALL distinct
+ * sessionIds for this user that have memories but no session summary
+ * yet, and generate a summary for each.
  */
 export async function onSessionEnd(
   userId: string,
   sessionId: string
 ): Promise<void> {
-  console.log(`[Summary Manager] Session ended: ${sessionId}`);
+  console.log(`[Summary Manager] Session ended (trigger: ${sessionId})`);
 
   try {
-    await updateSessionSummary(userId, sessionId);
+    const memoriesCol = getMemoriesCollection();
+    const summariesCol = getSummariesCollection();
+
+    // Find every distinct sessionId for this user
+    const allSessionIds: string[] = await memoriesCol.distinct('sessionId', { userId });
+
+    // Find sessionIds that already have a session summary
+    const summarisedSessionIds: string[] = await summariesCol.distinct(
+      'period.sessionId',
+      { userId, summaryType: 'session' }
+    );
+
+    const summarisedSet = new Set(summarisedSessionIds);
+
+    // Always include the explicitly-provided sessionId (may need an update even
+    // if it already has a summary — it could have new memories since last update)
+    const toUpdate = new Set<string>([sessionId]);
+    for (const sid of allSessionIds) {
+      if (!summarisedSet.has(sid)) {
+        toUpdate.add(sid);
+      }
+    }
+
+    console.log(
+      `[Summary Manager] Found ${allSessionIds.length} sessionIds, ` +
+      `${summarisedSet.size} already summarised, updating ${toUpdate.size}`
+    );
+
+    for (const sid of toUpdate) {
+      await updateSessionSummary(userId, sid);
+    }
+
     await updateDailySummary(userId);
     await updateUserProfile(userId);
     console.log('[Summary Manager] All summaries updated for session end');

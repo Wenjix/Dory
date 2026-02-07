@@ -37,13 +37,19 @@ export function getPlanningRules(): string {
 - wait tool: Parameters: {seconds: number} (e.g., {seconds: 2}). Use between actions when user requests a pause/delay.
 
 PARAMETER REFERENCES:
-- Use "$step_N.field" to reference previous step results (e.g., "$step_0.result.blocks" or "$step_2.result.position.x")
+- Use "$step_N.field" to reference previous step results (e.g., "$step_0.position.x" or "$step_1.adjacentPosition.y")
 - Use "$state.field" to reference current state (e.g., "$state.bot.position.x" or "$state.player.position.x")
 - Use "$player.position.x" for player position (shorthand)
+- IMPORTANT: Available extracted fields for what_is_player_looking_at: position.x/y/z, adjacentPosition.x/y/z, blockName
 
 CONDITIONAL STEPS (optional):
-- Add "condition": {"type": "if", "check": "$step_1.result.success"} to make step conditional
+- Add "condition": {"type": "if", "check": "$step_0.success"} to make step conditional
 - "type" can be: "if", "if_not", or "always" (default if omitted)
+
+PLAYER-LOOK TOOLS (prefer these for "where I'm looking" requests):
+- build_wall_where_player_looking, build_pillar_where_player_looking, build_floor_where_player_looking — use these DIRECTLY for building where the player looks. They handle raycast internally, no need for what_is_player_looking_at first.
+- place_block_where_player_looking — places a SINGLE block where the player is looking. Use this directly. Do NOT use what_is_player_looking_at + place_block — that is error-prone.
+- Only use what_is_player_looking_at if you genuinely need to inspect the block BEFORE deciding what to do (rare).
 
 RULES:
 - Break complex requests into logical sequential steps
@@ -114,6 +120,14 @@ User: "Build a wall where I'm looking"
   "reasoning": "Build a wall at the location the player is looking at.",
   "steps": [
     {"order": 0, "tool": "build_wall_where_player_looking", "parameters": {"block_type": "cobblestone", "width": 5, "height": 3}, "expectedOutcome": "Wall built at player's target location"}
+  ]
+}
+
+User: "Place a crafting table where I'm looking"
+{
+  "reasoning": "Place a crafting table at the location the player is looking at.",
+  "steps": [
+    {"order": 0, "tool": "place_block_where_player_looking", "parameters": {"block_type": "crafting_table"}, "expectedOutcome": "Crafting table placed at player's target location"}
   ]
 }
 

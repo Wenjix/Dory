@@ -35,6 +35,11 @@ import {
   getVisiblePlayers,
 } from '../actions/vision';
 import { createLogger } from '@dory/shared';
+import {
+  emitItemCrafted,
+  emitStructureBuilt,
+  emitResourceCollected,
+} from '../events';
 
 const logger = createLogger('tool-executor');
 
@@ -102,6 +107,12 @@ const handlers: Record<string, ToolHandler> = {
   collect_resource: async (bot, args) => {
     const { block_type, count = 1 } = args;
     const result = await bot.collectBlock(block_type, count);
+    if (result.state) {
+      // Extract collected count from message (e.g. "Collected 5x oak_log")
+      const countMatch = result.message.match(/Collected (\d+)/);
+      const collected = countMatch ? parseInt(countMatch[1]) : count;
+      emitResourceCollected(bot.sessionId, block_type, collected, collected);
+    }
     return {
       success: result.state,
       message: result.message,
@@ -154,7 +165,11 @@ const handlers: Record<string, ToolHandler> = {
 
   craft_item: async (bot, args) => {
     const { item_name, count = 1 } = args;
-    return craftItem(bot, item_name, count);
+    const result = await craftItem(bot, item_name, count);
+    if (result.success) {
+      emitItemCrafted(bot.sessionId, item_name, count);
+    }
+    return result;
   },
 
   drop_item: async (bot, args) => {
@@ -226,17 +241,29 @@ const handlers: Record<string, ToolHandler> = {
 
   build_pillar: async (bot, args) => {
     const { height, block_type } = args;
-    return buildPillar(bot, height, block_type);
+    const result = await buildPillar(bot, height, block_type);
+    if (result.success) {
+      emitStructureBuilt(bot.sessionId, 'pillar', block_type, height || 3);
+    }
+    return result;
   },
 
   build_wall: async (bot, args) => {
     const { length, height, block_type } = args;
-    return buildWall(bot, length, height, block_type);
+    const result = await buildWall(bot, length, height, block_type);
+    if (result.success) {
+      emitStructureBuilt(bot.sessionId, 'wall', block_type, (length || 5) * (height || 3));
+    }
+    return result;
   },
 
   build_floor: async (bot, args) => {
     const { width, length, block_type } = args;
-    return buildFloor(bot, width, length, block_type);
+    const result = await buildFloor(bot, width, length, block_type);
+    if (result.success) {
+      emitStructureBuilt(bot.sessionId, 'platform', block_type, (width || 5) * (length || 5));
+    }
+    return result;
   },
 
   // ── Building (Player POV) ─────────────────────────────────────────────────
@@ -248,12 +275,20 @@ const handlers: Record<string, ToolHandler> = {
 
   build_pillar_where_player_looking: async (bot, args) => {
     const { height, block_type } = args;
-    return buildPillarWherePlayerLooking(bot, height, block_type);
+    const result = await buildPillarWherePlayerLooking(bot, height, block_type);
+    if (result.success) {
+      emitStructureBuilt(bot.sessionId, 'pillar', block_type, height || 3);
+    }
+    return result;
   },
 
   build_wall_where_player_looking: async (bot, args) => {
     const { length, height, block_type } = args;
-    return buildWallWherePlayerLooking(bot, length, height, block_type);
+    const result = await buildWallWherePlayerLooking(bot, length, height, block_type);
+    if (result.success) {
+      emitStructureBuilt(bot.sessionId, 'wall', block_type, (length || 5) * (height || 3));
+    }
+    return result;
   },
 
   // ── Vision & Info ─────────────────────────────────────────────────────────

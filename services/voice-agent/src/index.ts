@@ -10,6 +10,11 @@
  * - LiveKit agent for voice conversations
  */
 
+// Reduce ONNX runtime threads to prevent native mutex crash during shutdown
+// (Silero VAD uses ONNX which can crash with "mutex lock failed" on exit)
+process.env.ORT_NUM_THREADS = '1';
+process.env.OMP_NUM_THREADS = '1';
+
 // Load environment variables FIRST
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
@@ -192,6 +197,11 @@ cli.runApp(
     wsURL: process.env.LIVEKIT_URL,
     apiKey: process.env.LIVEKIT_API_KEY,
     apiSecret: process.env.LIVEKIT_API_SECRET,
+    // Keep 1 idle worker process alive at all times.
+    // This prevents the worker from being terminated between sessions,
+    // which avoids a native ONNX runtime crash (Silero VAD mutex error)
+    // that occurs during worker process shutdown.
+    numIdleProcesses: 1,
   })
 );
 

@@ -22,11 +22,14 @@ interface MinecraftBotConfig {
 export class MinecraftBot {
   public bot: Bot;
   public mcData: IndexedData | null = null;
-  private sessionId: string;
+  private _sessionId: string;
   private interruptFlag = false;
 
+  /** Session ID for this bot instance */
+  get sessionId(): string { return this._sessionId; }
+
   constructor(config: MinecraftBotConfig, sessionId: string) {
-    this.sessionId = sessionId;
+    this._sessionId = sessionId;
 
     // Create mineflayer bot
     this.bot = createBot({
@@ -45,7 +48,7 @@ export class MinecraftBot {
     // Initialize minecraft-data once bot logs in
     this.bot.once('login', () => {
       this.mcData = minecraftData(this.bot.version);
-      logger.info(`[${this.sessionId}] Bot logged in, version: ${this.bot.version}`);
+      logger.info(`[${this._sessionId}] Bot logged in, version: ${this.bot.version}`);
     });
 
     // Setup movements for pathfinder (after spawn)
@@ -206,7 +209,7 @@ export class MinecraftBot {
         // ── Check for interruption BEFORE collecting ────────────────────
         if (this.interruptFlag) {
           this.interruptFlag = false;
-          logger.info(`[${this.sessionId}] Collection interrupted after ${collected} blocks`);
+          logger.info(`[${this._sessionId}] Collection interrupted after ${collected} blocks`);
           return {
             state: collected > 0,
             message: collected > 0
@@ -219,7 +222,7 @@ export class MinecraftBot {
         const currentInventory = countMatchingItems();
         const actualCollected = currentInventory - initialCount;
         if (actualCollected >= targetCount) {
-          logger.info(`[${this.sessionId}] Already collected ${actualCollected} via inventory check`);
+          logger.info(`[${this._sessionId}] Already collected ${actualCollected} via inventory check`);
           return { state: true, message: `Collected ${actualCollected}x ${blockType}` };
         }
 
@@ -249,26 +252,26 @@ export class MinecraftBot {
         }
 
         const dist = botPos.distanceTo(block.position).toFixed(1);
-        logger.info(`[${this.sessionId}] Collecting ${block.name} at (${block.position.x}, ${block.position.y}, ${block.position.z}) - ${dist} blocks away [${collected + 1}/${targetCount}]`);
+        logger.info(`[${this._sessionId}] Collecting ${block.name} at (${block.position.x}, ${block.position.y}, ${block.position.z}) - ${dist} blocks away [${collected + 1}/${targetCount}]`);
 
         // ── Collect the block ───────────────────────────────────────────
         try {
           await (this.bot as any).collectBlock.collect(block);
           collected++;
         } catch (pluginError) {
-          logger.warn(`[${this.sessionId}] Plugin failed, manual dig: ${(pluginError as Error).message}`);
+          logger.warn(`[${this._sessionId}] Plugin failed, manual dig: ${(pluginError as Error).message}`);
           try {
             await this.manualCollect(block);
             collected++;
           } catch (manualError) {
-            logger.warn(`[${this.sessionId}] Manual dig failed: ${(manualError as Error).message}`);
+            logger.warn(`[${this._sessionId}] Manual dig failed: ${(manualError as Error).message}`);
           }
         }
 
         // ── Check interrupt AFTER collecting ────────────────────────────
         if (this.interruptFlag) {
           this.interruptFlag = false;
-          logger.info(`[${this.sessionId}] Collection interrupted after collect() — got ${collected} blocks`);
+          logger.info(`[${this._sessionId}] Collection interrupted after collect() — got ${collected} blocks`);
           return {
             state: collected > 0,
             message: collected > 0
@@ -284,7 +287,7 @@ export class MinecraftBot {
       // Final inventory check
       const finalCount = countMatchingItems();
       const totalCollected = finalCount - initialCount;
-      logger.info(`[${this.sessionId}] Collection done: loop=${collected}, inventory_delta=${totalCollected}`);
+      logger.info(`[${this._sessionId}] Collection done: loop=${collected}, inventory_delta=${totalCollected}`);
 
       if (totalCollected === 0 && collected === 0) {
         return { state: false, message: `Failed to collect any ${blockType}` };

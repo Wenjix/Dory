@@ -195,13 +195,17 @@ function startConversationSync(
 
   onShutdown(() => clearInterval(interval));
 
-  // Final flush on shutdown
-  onShutdown(async () => {
-    if (messages.length > lastSyncIndex) {
-      const remaining = messages.slice(lastSyncIndex);
-      await sendConversationContext(userId, sessionId, remaining).catch(() => {});
-    }
-    await notifySessionEnd(userId, sessionId).catch(() => {});
+  // Final flush on shutdown — fire-and-forget to avoid blocking native cleanup
+  // (awaiting HTTP calls during shutdown can trigger ONNX runtime mutex crashes)
+  onShutdown(() => {
+    const doFlush = async () => {
+      if (messages.length > lastSyncIndex) {
+        const remaining = messages.slice(lastSyncIndex);
+        await sendConversationContext(userId, sessionId, remaining).catch(() => {});
+      }
+      await notifySessionEnd(userId, sessionId).catch(() => {});
+    };
+    doFlush().catch(() => {});
   });
 
   return { messages };
@@ -213,7 +217,10 @@ function startConversationSync(
 
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
-    proc.userData.vadLoaded = true;
+    // Load VAD once per worker process — avoids native ONNX cleanup crashes
+    // when sessions end and new ones start in the same worker.
+    proc.userData.vad = await silero.VAD.load();
+    console.log('[Prewarm] VAD model loaded');
   },
 
   entry: async (ctx: JobContext) => {
@@ -233,8 +240,8 @@ export default defineAgent({
       return;
     }
 
-    // ── VAD ────────────────────────────────────────────────────────────────
-    const vad = await silero.VAD.load();
+    // ── VAD (prewarmed — reused across sessions) ──────────────────────────
+    const vad = (ctx.proc.userData.vad as silero.VAD) || await silero.VAD.load();
 
     // ── STT (Deepgram Nova 3) ─────────────────────────────────────────────
     const stt = new deepgram.STT({
@@ -283,7 +290,19 @@ export default defineAgent({
       if (memoryContext && memoryContext !== 'No previous memory data for this user.') {
         enrichedInstructions =
           VOICE_INSTRUCTIONS +
-          `\n\n# What You Remember About This Player\nUse this context to personalize your responses. Reference it naturally when relevant — don't recite it.\n\n${memoryContext}`;
+          `\n\n# Background Memory (subtle — DO NOT recite)
+You have vague memories from previous sessions with this player. Use them ONLY to:
+- Occasionally reference shared history ("Oh yeah, we built that castle before!" or "You like jungle wood, right?")
+- Adapt your tone if you know the player's style
+- Avoid re-asking things you already know
+
+Rules:
+- Do NOT list what you remember. Never say "I remember that you like X and Y and Z."
+- Do NOT bring up memories unprompted every turn — sprinkle them in naturally, maybe once every few exchanges.
+- If the memory doesn't fit the conversation, just ignore it.
+- Keep it casual — like a friend who just happens to remember, not a database readout.
+
+${memoryContext}`;
         console.log(`[Agent] Enriched prompt with memory context (${memoryContext.length} chars)`);
       } else {
         console.log('[Agent] No memory context available (new user or game agent not running)');
@@ -351,11 +370,11 @@ export default defineAgent({
     console.log(`[Agent] Conversation sync started (every ${SYNC_INTERVAL_MS / 1000}s)`);
 
     // ── Shutdown ──────────────────────────────────────────────────────────
-    ctx.addShutdownCallback(async () => {
+    ctx.addShutdownCallback(() => {
       console.log(`[Agent] Session ending: ${sessionId}`);
       for (const cb of shutdownCallbacks) {
         try {
-          await cb();
+          cb();
         } catch {}
       }
     });

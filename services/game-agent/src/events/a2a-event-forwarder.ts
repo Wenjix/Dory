@@ -97,10 +97,8 @@ function formatEvent(event: GameEvent): FormattedEvent | null {
       };
 
     case 'minecraft:player_joined':
-      return {
-        priority: 'medium',
-        message: `Player ${event.data.username} joined the game`,
-      };
+      // Skip — arrives late and sounds unnatural ("oh X just joined" a minute later)
+      return null;
 
     case 'custom:item_crafted':
       return {

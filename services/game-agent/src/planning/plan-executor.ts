@@ -164,20 +164,33 @@ function resolveValue(value: any, plan: Plan, bot: MinecraftBot): any {
 
   logger.debug(`Resolving reference: ${value}`);
 
-  // $step_N.field
+  // $step_N.field — references to previous step results
+  // LLM generates paths like "$step_0.result.position.x" or "$step_0.success"
+  // step.result = { success, data: { message, ...extracted }, error }
   const stepMatch = value.match(/^\$step_(\d+)\.(.+)$/);
   if (stepMatch) {
     const stepIndex = parseInt(stepMatch[1]);
-    const fieldPath = stepMatch[2];
+    let fieldPath = stepMatch[2];
     const step = plan.steps.find((s) => s.order === stepIndex);
     if (!step?.result) {
       throw new Error(`Cannot resolve ${value}: step_${stepIndex} not executed yet`);
     }
-    const result = getNestedValue(step.result.data, fieldPath);
-    if (result === undefined) {
+
+    // Strip leading "result." — LLM writes $step_0.result.X but we're already
+    // accessing step.result, so "result.X" would double-nest.
+    if (fieldPath.startsWith('result.')) {
+      fieldPath = fieldPath.slice('result.'.length);
+    }
+
+    // Try step.result first (for "success", "error"), then step.result.data (for extracted fields)
+    let resolved = getNestedValue(step.result, fieldPath);
+    if (resolved === undefined && step.result.data) {
+      resolved = getNestedValue(step.result.data, fieldPath);
+    }
+    if (resolved === undefined) {
       throw new Error(`Cannot resolve ${value}: field "${fieldPath}" not found`);
     }
-    return result;
+    return resolved;
   }
 
   // $state.field
@@ -215,10 +228,21 @@ function resolveReference(ref: string, plan: Plan): any {
   const stepMatch = ref.match(/^\$step_(\d+)\.(.+)$/);
   if (stepMatch) {
     const stepIndex = parseInt(stepMatch[1]);
-    const fieldPath = stepMatch[2];
+    let fieldPath = stepMatch[2];
     const step = plan.steps.find((s) => s.order === stepIndex);
     if (!step?.result) return undefined;
-    return getNestedValue(step.result, fieldPath);
+
+    // Strip leading "result." to avoid double-nesting
+    if (fieldPath.startsWith('result.')) {
+      fieldPath = fieldPath.slice('result.'.length);
+    }
+
+    // Try step.result first, then step.result.data
+    let resolved = getNestedValue(step.result, fieldPath);
+    if (resolved === undefined && step.result.data) {
+      resolved = getNestedValue(step.result.data, fieldPath);
+    }
+    return resolved;
   }
   return undefined;
 }
@@ -237,7 +261,7 @@ function getNestedValue(obj: any, path: string): any {
 function extractResultData(message: string, toolName: string): Record<string, any> {
   const data: Record<string, any> = {};
 
-  // Position extraction
+  // Position extraction from get_position
   if (toolName === 'get_position') {
     const posMatch = message.match(/X=([\d.-]+).*Y=([\d.-]+).*Z=([\d.-]+)/);
     if (posMatch) {
@@ -245,6 +269,32 @@ function extractResultData(message: string, toolName: string): Record<string, an
         x: parseFloat(posMatch[1]),
         y: parseFloat(posMatch[2]),
         z: parseFloat(posMatch[3]),
+      };
+    }
+  }
+
+  // Player look-target: extract block position and adjacent position
+  // Format: "Player is looking at grass_block at (-71, 63, -22), ... Adjacent position: (-71, 64, -22)"
+  if (toolName === 'what_is_player_looking_at') {
+    const blockMatch = message.match(
+      /looking at (\w+) at \(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/
+    );
+    if (blockMatch) {
+      data.blockName = blockMatch[1];
+      data.position = {
+        x: parseFloat(blockMatch[2]),
+        y: parseFloat(blockMatch[3]),
+        z: parseFloat(blockMatch[4]),
+      };
+    }
+    const adjMatch = message.match(
+      /Adjacent position: \(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/
+    );
+    if (adjMatch) {
+      data.adjacentPosition = {
+        x: parseFloat(adjMatch[1]),
+        y: parseFloat(adjMatch[2]),
+        z: parseFloat(adjMatch[3]),
       };
     }
   }

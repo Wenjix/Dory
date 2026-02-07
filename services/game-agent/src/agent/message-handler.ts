@@ -105,6 +105,27 @@ export interface HandleMessageResult {
   planSummary?: string;
 }
 
+// ─── Chat vs Action Detection ─────────────────────────────────────────────────
+
+/**
+ * Determine if a message is conversational (chat/question) rather than an action request.
+ * Chat messages can be answered without interrupting an active plan.
+ */
+function isChatMessage(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+
+  const chatPatterns = [
+    /^(hi|hello|hey|sup|yo|what'?s up)\b/,
+    /^(how (are|is)|what do you|where are you|who|tell me|do you)/,
+    /^(thanks|thank you|cool|nice|great|awesome|ok|okay|alright)\b/,
+    /^(what|why|when|how|where|can you tell|do you know)/,
+    /^(help|what can you do|what tools)/,
+    /\?$/,  // Anything ending with a question mark
+  ];
+
+  return chatPatterns.some((p) => p.test(lower));
+}
+
 // ─── Complexity Detection ─────────────────────────────────────────────────────
 
 /**
@@ -138,7 +159,10 @@ function isComplexRequest(message: string): boolean {
     return false;
   }
 
-  // Multi-step indicators
+  // Multi-step indicators OR long-running single actions
+  // Long-running tools (collect, craft) go through planning so the voice agent
+  // gets an immediate narration ("On it, I'll collect some wood!") instead of
+  // blocking the HTTP request for 30+ seconds.
   const complexIndicators = [
     / and (then )?/,        // "get wood and build"
     / then /,               // "collect stone then craft"
@@ -152,6 +176,13 @@ function isComplexRequest(message: string): boolean {
     /give .* to/,           // give implies collect + come to player
     /bring .* (to|here)/,   // bring implies collect + navigate
     /get .* (and|then|for)/, // get + another action
+    /^collect /,            // "collect wood" — long-running, needs immediate ack
+    /^gather /,             // "gather stone"
+    /^mine /,               // "mine some iron"
+    /^get \d+ /,            // "get 5 oak logs"
+    /^get (some|wood|stone|cobble|sand|dirt|iron|coal|diamond|gold)/, // "get some wood"
+    /^craft /,              // "craft planks" — may need prerequisites
+    /place .*(where|here|looking)/, // "place X where I'm looking" — use planning to pick right tool
   ];
 
   if (complexIndicators.some((p) => p.test(lower))) {
@@ -179,22 +210,64 @@ export async function handleMessage(
   llm: LLMProvider,
   userMessage: string
 ): Promise<HandleMessageResult> {
-  // ── Cancel any active plan ──────────────────────────────────────────────
   const activePlan = getActivePlan(sessionId);
-  if (activePlan) {
-    logger.info(`[${sessionId}] New message received, cancelling active plan ${activePlan.id}`);
-    await cancelPlan(sessionId, bot);
-  }
-
   const history = getHistory(sessionId);
   history.push({ role: 'user', content: userMessage });
 
-  // ── Route: complex → planning, simple → direct loop ─────────────────────
   const complex = isComplexRequest(userMessage);
+  const isChat = isChatMessage(userMessage);
+
   logger.info(
-    `[${sessionId}] Handling message: "${userMessage}" (complex=${complex}, history=${history.length})`
+    `[${sessionId}] Handling message: "${userMessage}" (complex=${complex}, chat=${isChat}, activePlan=${!!activePlan}, history=${history.length})`
   );
 
+  // ── If bot is busy with a plan and user sends an action request ─────────
+  // Don't silently cancel — tell them we're busy and ask if they want to stop.
+  // For chat/questions, respond normally without interrupting the plan.
+  if (activePlan && !isChat) {
+    // Describe what the bot is currently doing
+    const currentStep = activePlan.steps[activePlan.currentStepIndex];
+    const doing = currentStep
+      ? describeStep(currentStep.tool, currentStep.parameters, 0, 1)
+      : 'working on something';
+
+    const busyResponse = `I'm currently busy — ${doing}. Want me to stop and do this instead?`;
+    logger.info(`[${sessionId}] Bot is busy, asking user: "${busyResponse}"`);
+
+    history.push({ role: 'assistant', content: busyResponse });
+    trimHistory(history);
+
+    return {
+      response: busyResponse,
+      toolsExecuted: [],
+      llmCalls: 0,
+      usedPlanning: false,
+    };
+  }
+
+  // ── Cancel any active plan for new action requests ──────────────────────
+  if (activePlan) {
+    // isChat is true here, so the user is chatting — still cancel if they say "yes/stop"
+    const lower = userMessage.toLowerCase().trim();
+    if (/^(yes|yeah|yep|stop|cancel|do it|ok do|sure)/.test(lower)) {
+      logger.info(`[${sessionId}] User confirmed cancel, cancelling active plan ${activePlan.id}`);
+      await cancelPlan(sessionId, bot);
+
+      const cancelResponse = "Alright, I stopped. What would you like me to do?";
+      history.push({ role: 'assistant', content: cancelResponse });
+      trimHistory(history);
+
+      return {
+        response: cancelResponse,
+        toolsExecuted: [],
+        llmCalls: 0,
+        usedPlanning: false,
+      };
+    }
+    // Otherwise it's just chat — let it through without cancelling
+  }
+
+  // ── Route: complex → planning, simple → direct loop ─────────────────────
   if (complex) {
     return await handleWithPlanning(sessionId, bot, llm, userMessage, history);
   } else {
