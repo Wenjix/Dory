@@ -18,41 +18,10 @@ export async function goToPosition(
 ): Promise<boolean> {
   try {
     const goal = new goals.GoalNear(x, y, z, minDistance);
-    bot.bot.pathfinder.setGoal(goal);
-
-    return new Promise((resolve) => {
-      const onGoalReached = () => {
-        cleanup();
-        bot.stop();
-        resolve(true);
-      };
-
-      const onPathUpdate = (results: any) => {
-        if (results.status === 'noPath') {
-          cleanup();
-          bot.stop();
-          resolve(false);
-        }
-      };
-
-      const cleanup = () => {
-        (bot.bot.pathfinder as any).removeListener('goal_reached', onGoalReached);
-        (bot.bot.pathfinder as any).removeListener('path_update', onPathUpdate);
-      };
-
-      (bot.bot.pathfinder as any).on('goal_reached', onGoalReached);
-      (bot.bot.pathfinder as any).on('path_update', onPathUpdate);
-
-      // Timeout after 60 seconds
-      setTimeout(() => {
-        cleanup();
-        bot.stop();
-        resolve(false);
-      }, 60000);
-    });
+    await bot.bot.pathfinder.goto(goal);
+    return true;
   } catch (error) {
     logger.error('goToPosition error:', error);
-    await bot.stop();
     return false;
   }
 }
