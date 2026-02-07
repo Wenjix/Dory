@@ -71,6 +71,16 @@ export interface MinecraftEntitySpawnEvent extends BaseEvent {
   };
 }
 
+export interface MinecraftInventoryChangeEvent extends BaseEvent {
+  type: 'minecraft:inventory_change';
+  source: 'minecraft';
+  data: {
+    slot: number;
+    item: { name: string; count: number } | null;
+    previousItem: { name: string; count: number } | null;
+  };
+}
+
 // ── Custom Events (emitted by our action code) ───────────────────────────────
 
 export interface ResourceCollectedEvent extends BaseEvent {
@@ -131,7 +141,8 @@ export type MinecraftEvent =
   | MinecraftItemPickupEvent
   | MinecraftPlayerJoinedEvent
   | MinecraftPlayerLeftEvent
-  | MinecraftEntitySpawnEvent;
+  | MinecraftEntitySpawnEvent
+  | MinecraftInventoryChangeEvent;
 
 export type CustomEvent =
   | ResourceCollectedEvent

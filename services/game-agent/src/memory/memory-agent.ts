@@ -24,6 +24,7 @@ export function shouldStoreMemory(
   // Always store high-significance events
   if (
     event.type === 'minecraft:death' ||
+    event.type === 'minecraft:inventory_change' ||
     event.type === 'custom:task_completed' ||
     event.type === 'custom:task_failed' ||
     event.type === 'custom:structure_built' ||
@@ -61,6 +62,8 @@ export function calculateImportance(event: GameEvent): number {
   switch (event.type) {
     case 'minecraft:death':
       return 0.9;
+    case 'minecraft:inventory_change':
+      return 0.8;
     case 'custom:task_failed':
       return 0.8;
     case 'custom:structure_built':
@@ -115,6 +118,38 @@ export function encodeEventToMemory(
           location: pos,
           outcome: 'failure',
           emotionalWeight: 0.9,
+        },
+      };
+      mem.textContent = extractTextFromMemory(mem);
+      return mem;
+    }
+
+    // ── Precious/important item gained ─────────────────────────────────
+    case 'minecraft:inventory_change': {
+      const item = event.data.item;
+      const prev = event.data.previousItem;
+      if (!item) return null;
+      const gained = prev ? item.count - prev.count : item.count;
+      const description =
+        gained > 0
+          ? `Received ${gained > 1 ? `${gained}x ` : ''}${item.name}`
+          : `Inventory change: ${item.name} (${item.count})`;
+
+      const mem: EpisodicMemory = {
+        sessionId,
+        userId,
+        type: 'episodic',
+        timestamp,
+        lastAccessed: timestamp,
+        importance: 0.8,
+        tags: [...tags, 'inventory', 'precious', item.name],
+        textContent: '',
+        source: 'event',
+        data: {
+          event: 'precious_item_gained',
+          description,
+          outcome: 'success',
+          emotionalWeight: 0.8,
         },
       };
       mem.textContent = extractTextFromMemory(mem);

@@ -17,6 +17,7 @@ import type {
   MinecraftPlayerJoinedEvent,
   MinecraftPlayerLeftEvent,
   MinecraftEntitySpawnEvent,
+  MinecraftInventoryChangeEvent,
   BotConnectedEvent,
   BotDisconnectedEvent,
 } from './event-types';
@@ -184,6 +185,48 @@ export function setupMinecraftEventListeners(
         position: { x: Math.round(entPos.x), y: Math.round(entPos.y), z: Math.round(entPos.z) },
       },
     } as MinecraftEntitySpawnEvent);
+  });
+
+  // ── Inventory changes (precious / important items only) ───────────────────
+  const PRECIOUS_ITEMS = [
+    'diamond', 'emerald', 'netherite', 'ancient_debris',
+    'elytra', 'totem', 'enchanted', 'golden_apple', 'gold_ingot',
+    'gold_block', 'diamond_block', 'emerald_block',
+  ];
+  const IMPORTANT_GEAR = [
+    'pickaxe', 'axe', 'sword', 'shovel', 'hoe',
+    'helmet', 'chestplate', 'leggings', 'boots',
+    'bow', 'crossbow', 'trident', 'shield',
+  ];
+
+  bot.inventory.on('updateSlot' as any, (slot: number, oldItem: any, newItem: any) => {
+    const newName = newItem?.name || '';
+    const oldName = oldItem?.name || '';
+    const newCount = newItem?.count || 0;
+    const oldCount = oldItem?.count || 0;
+
+    // Only care about gains (new > old or new item appeared)
+    if (newCount <= oldCount && newName === oldName) return;
+
+    const isPrecious = PRECIOUS_ITEMS.some((p) => newName.includes(p));
+    const isNewGear =
+      IMPORTANT_GEAR.some((g) => newName.includes(g)) &&
+      oldCount === 0 &&
+      !oldName; // genuinely new, not a slot swap
+
+    if (!isPrecious && !isNewGear) return;
+
+    gameEventBus.emit({
+      type: 'minecraft:inventory_change',
+      source: 'minecraft',
+      sessionId,
+      timestamp: new Date(),
+      data: {
+        slot,
+        item: newItem ? { name: newName, count: newCount } : null,
+        previousItem: oldItem ? { name: oldName, count: oldCount } : null,
+      },
+    } as MinecraftInventoryChangeEvent);
   });
 
   logger.info(`Event listeners ready for session ${sessionId}`);

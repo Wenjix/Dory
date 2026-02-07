@@ -72,6 +72,17 @@ function formatEvent(event: GameEvent): FormattedEvent | null {
         message: `Bot connected to ${event.data.server}:${event.data.port} as ${event.data.username}`,
       };
 
+    case 'minecraft:inventory_change': {
+      const item = event.data.item;
+      if (!item) return null;
+      const prev = event.data.previousItem;
+      const gained = prev ? item.count - prev.count : item.count;
+      return {
+        priority: 'high',
+        message: `Received a special item: ${gained > 1 ? `${gained}x ` : ''}${item.name}!`,
+      };
+    }
+
     // ── MEDIUM ───────────────────────────────────────────────────────────
     case 'minecraft:respawn':
       return {

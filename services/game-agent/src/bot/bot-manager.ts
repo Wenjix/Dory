@@ -2,6 +2,7 @@ import { MinecraftBot } from './minecraft-bot';
 import { SessionConfig, SessionId } from '@dory/shared';
 import { createLogger } from '@dory/shared';
 import { setupMinecraftEventListeners, setupA2AEventForwarder } from '../events';
+import { setupMemoryEventListener, removeMemoryEventListener } from '../memory/event-listener';
 
 const logger = createLogger('bot-manager');
 
@@ -84,6 +85,10 @@ export class BotManager {
       setupMinecraftEventListeners(bot, sessionId);
       setupA2AEventForwarder(sessionId);
 
+      // Setup memory system (event -> memory pipeline)
+      const userId = config.botName || 'default_user';
+      setupMemoryEventListener(sessionId, userId);
+
       // Send welcome message when bot spawns
       bot.bot.once('spawn', () => {
         bot.chat('Hello! I\'m here to help! 👋');
@@ -131,6 +136,9 @@ export class BotManager {
     try {
       bot.chat('Goodbye! See you later! 👋');
       
+      // Flush pending memory batches before disconnect
+      await removeMemoryEventListener(sessionId).catch(() => {});
+
       // Small delay to let the message send
       await new Promise(resolve => setTimeout(resolve, 500));
       
