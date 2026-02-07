@@ -26,9 +26,10 @@ Talk to Dory through voice and she will control a Minecraft bot for you:
                                       ┌─────┼─────┐
                                       ▼     ▼     ▼
                                    Tools  Planning  Bot
-                                            │
-                                            ▼
-                                     Minecraft Server
+                                      │           │
+                                      ▼           ▼
+                                   MongoDB   Minecraft Server
+                                  (Memory)
 ```
 
 | Service | Port | Description |
@@ -40,6 +41,7 @@ Talk to Dory through voice and she will control a Minecraft bot for you:
 
 - **Node.js 20+**
 - **pnpm 8+** — `npm install -g pnpm`
+- **Docker** — for local MongoDB (memory system)
 - **Minecraft Java Edition** server running (1.20+)
 - **LiveKit Cloud** account (free) — [livekit.io](https://livekit.io)
 - **API keys** for: LLM provider, Deepgram (STT), ElevenLabs (TTS)
@@ -101,7 +103,15 @@ LLM_MODEL=llama-3.3-70b-versatile
 GAME_AGENT_URL=http://localhost:3000
 ```
 
-### 3. Start everything
+### 3. Start MongoDB
+
+```bash
+docker compose up -d
+```
+
+This starts a local MongoDB on port 27017. Data persists in a Docker volume (`dory-mongo-data`).
+
+### 4. Start everything
 
 ```bash
 # Start all services (builds shared package, then starts game-agent + voice-agent)
@@ -115,7 +125,7 @@ pnpm dev:game    # Game agent only (port 3000)
 pnpm dev:voice   # Voice agent only (port 4001)
 ```
 
-### 4. Connect & play
+### 5. Connect & play
 
 1. **Start your Minecraft server** (Java Edition, offline mode recommended for testing)
 
@@ -139,6 +149,7 @@ pnpm dev:voice   # Voice agent only (port 4001)
 
 ```
 dory/
+├── docker-compose.yml       # MongoDB (memory system)
 ├── services/
 │   ├── game-agent/          # Minecraft bot + LLM reasoning
 │   │   ├── src/
@@ -146,7 +157,9 @@ dory/
 │   │   │   ├── actions/     # Building, vision, helpers
 │   │   │   ├── agent/       # Message handler, system prompt
 │   │   │   ├── bot/         # Bot wrapper + manager
+│   │   │   ├── events/      # Game event bus + A2A forwarding
 │   │   │   ├── llm/         # Provider-agnostic LLM client
+│   │   │   ├── memory/      # Memory system (MongoDB)
 │   │   │   ├── planning/    # Multi-step plan engine
 │   │   │   └── tools/       # Tool registry + executor
 │   │   └── test-console.html
@@ -188,6 +201,7 @@ dory/
 | TTS | ElevenLabs |
 | VAD | Silero |
 | A2A | HTTP REST (agent cards + JSON) |
+| Database | MongoDB 7 (Docker) |
 
 ## API Endpoints
 
