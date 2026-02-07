@@ -7,6 +7,7 @@ import { handleMessage } from './agent';
 import { getLLMClient } from './llm';
 import { GAME_AGENT_CARD } from './a2a/agent-card';
 import { handleA2AMessage } from './a2a/a2a-handler';
+import { createMemoryRouter } from './memory/api-routes';
 
 const logger = createLogger('GameAgentServer');
 
@@ -213,6 +214,9 @@ export function createServer(): Express {
       sessions,
     });
   });
+
+  // ── Memory API ──────────────────────────────────────────────────────────
+  app.use('/api/memory', createMemoryRouter());
 
   // 404 handler
   app.use((_req: Request, res: Response) => {
