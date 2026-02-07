@@ -20,6 +20,11 @@ import * as openai from '@livekit/agents-plugin-openai';
 import { VOICE_INSTRUCTIONS } from './prompt.js';
 import { gameTools } from '../tools/game-tools.js';
 import { fetchPendingEvents, acknowledgeEvents } from '../events/event-fetcher.js';
+import {
+  sendConversationContext,
+  fetchSystemContext,
+  notifySessionEnd,
+} from '../services/context-service.js';
 
 // ============================================================================
 // Game-Aware Agent (extends voice.Agent with event injection)
@@ -128,6 +133,81 @@ function startCriticalEventPoller(
 }
 
 // ============================================================================
+// Conversation History Collector + Periodic Sync
+// ============================================================================
+
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
+const SYNC_INTERVAL_MS = 60_000; // Sync conversation every 60 seconds
+
+/**
+ * Collects conversation messages and periodically sends them to the
+ * game agent's memory API for LLM extraction of preferences/goals/etc.
+ */
+function startConversationSync(
+  session: voice.AgentSession,
+  userId: string,
+  sessionId: string,
+  onShutdown: (cb: () => void) => void
+): { messages: ConversationMessage[] } {
+  const messages: ConversationMessage[] = [];
+  let lastSyncIndex = 0;
+
+  // Collect user and assistant messages from the session
+  session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
+    if (event.isFinal && event.transcript.trim()) {
+      messages.push({
+        role: 'user',
+        content: event.transcript,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (event) => {
+    const item = event.item;
+    if (item.role === 'assistant' && item.textContent) {
+      messages.push({
+        role: 'assistant',
+        content: item.textContent,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  // Periodic sync — send new messages since last sync
+  const interval = setInterval(async () => {
+    if (messages.length <= lastSyncIndex) return; // Nothing new
+
+    const newMessages = messages.slice(lastSyncIndex);
+    lastSyncIndex = messages.length;
+
+    try {
+      await sendConversationContext(userId, sessionId, newMessages);
+    } catch {
+      // Non-fatal
+    }
+  }, SYNC_INTERVAL_MS);
+
+  onShutdown(() => clearInterval(interval));
+
+  // Final flush on shutdown
+  onShutdown(async () => {
+    if (messages.length > lastSyncIndex) {
+      const remaining = messages.slice(lastSyncIndex);
+      await sendConversationContext(userId, sessionId, remaining).catch(() => {});
+    }
+    await notifySessionEnd(userId, sessionId).catch(() => {});
+  });
+
+  return { messages };
+}
+
+// ============================================================================
 // LiveKit Agent Definition
 // ============================================================================
 
@@ -193,12 +273,31 @@ export default defineAgent({
       },
     });
 
+    // ── Memory: fetch user profile for prompt enrichment ─────────────────
+    // Use bot name as userId (matches what bot-manager uses)
+    const userId = 'Dory'; // Default — matches bot-manager setup
+    let enrichedInstructions = VOICE_INSTRUCTIONS;
+
+    try {
+      const memoryContext = await fetchSystemContext(userId);
+      if (memoryContext && memoryContext !== 'No previous memory data for this user.') {
+        enrichedInstructions =
+          VOICE_INSTRUCTIONS +
+          `\n\n# What You Remember About This Player\nUse this context to personalize your responses. Reference it naturally when relevant — don't recite it.\n\n${memoryContext}`;
+        console.log(`[Agent] Enriched prompt with memory context (${memoryContext.length} chars)`);
+      } else {
+        console.log('[Agent] No memory context available (new user or game agent not running)');
+      }
+    } catch {
+      console.log('[Agent] Could not fetch memory context, using base prompt');
+    }
+
     // ── Agent with game event injection ──────────────────────────────────
     const toolNames = Object.keys(gameTools);
     console.log(`[Agent] Tools (${toolNames.length}): [${toolNames.join(', ')}]`);
 
     const agent = new GameAwareAgent({
-      instructions: VOICE_INSTRUCTIONS,
+      instructions: enrichedInstructions,
       llm: llm as any,
       tools: gameTools,
     });
@@ -245,10 +344,20 @@ export default defineAgent({
     const shutdownCallbacks: (() => void)[] = [];
     startCriticalEventPoller(session, (cb) => shutdownCallbacks.push(cb));
 
+    // ── Start conversation sync (periodic memory sync) ───────────────────
+    startConversationSync(session, userId, sessionId, (cb) =>
+      shutdownCallbacks.push(cb)
+    );
+    console.log(`[Agent] Conversation sync started (every ${SYNC_INTERVAL_MS / 1000}s)`);
+
     // ── Shutdown ──────────────────────────────────────────────────────────
     ctx.addShutdownCallback(async () => {
       console.log(`[Agent] Session ending: ${sessionId}`);
-      shutdownCallbacks.forEach((cb) => cb());
+      for (const cb of shutdownCallbacks) {
+        try {
+          await cb();
+        } catch {}
+      }
     });
   },
 });
