@@ -46,11 +46,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const url = `${this.baseUrl}/chat/completions`;
 
+    const maxTokens = request.max_tokens ?? this.defaultMaxTokens;
+
+    // GPT-5+ and o-series reasoning models require 'max_completion_tokens' instead of 'max_tokens'
+    const isReasoningModel = /^(gpt-5|o[1-4])/.test(this.model);
+
     const body: Record<string, unknown> = {
       model: this.model,
       messages: request.messages,
-      temperature: request.temperature ?? this.defaultTemperature,
-      max_tokens: request.max_tokens ?? this.defaultMaxTokens,
+      ...(isReasoningModel
+        ? { max_completion_tokens: maxTokens }
+        : { temperature: request.temperature ?? this.defaultTemperature, max_tokens: maxTokens }),
     };
 
     // Add tools if provided

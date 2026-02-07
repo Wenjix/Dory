@@ -40,6 +40,7 @@ import {
   emitStructureBuilt,
   emitResourceCollected,
 } from '../events';
+import { generateAndBuild, cancelBuild, isBuildActive } from '../builder';
 
 const logger = createLogger('tool-executor');
 
@@ -289,6 +290,57 @@ const handlers: Record<string, ToolHandler> = {
       emitStructureBuilt(bot.sessionId, 'wall', block_type, (length || 5) * (height || 3));
     }
     return result;
+  },
+
+  // ── AI Structure Generation ───────────────────────────────────────────
+
+  generate_structure: async (bot, args) => {
+    const { description, player_username } = args;
+
+    if (isBuildActive(bot.sessionId)) {
+      return {
+        success: false,
+        message: 'A build is already in progress. Cancel it first with cancel_structure.',
+      };
+    }
+
+    // Run the build asynchronously so the tool returns immediately
+    // with a "started" message, then the build runs in the background
+    const result = await generateAndBuild(bot, {
+      description,
+      playerUsername: player_username,
+    });
+
+    if (result.success) {
+      emitStructureBuilt(
+        bot.sessionId,
+        'other',
+        'mixed',
+        result.blocksPlaced || 0
+      );
+    }
+
+    return {
+      success: result.success,
+      message: result.message,
+      data: {
+        blocksPlaced: result.blocksPlaced,
+        totalBlocks: result.totalBlocks,
+        position: result.position,
+        durationMs: result.durationMs,
+        cancelled: result.cancelled,
+      },
+    };
+  },
+
+  cancel_structure: async (bot) => {
+    const cancelled = cancelBuild(bot.sessionId);
+    return {
+      success: cancelled,
+      message: cancelled
+        ? 'Build cancellation requested. It will stop after the current block.'
+        : 'No active build to cancel.',
+    };
   },
 
   // ── Vision & Info ─────────────────────────────────────────────────────────

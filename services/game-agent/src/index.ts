@@ -19,15 +19,8 @@ async function main() {
       logger.warn('Bot will work without AI reasoning. Set API keys in .env to enable.');
     }
 
-    // Connect to MongoDB (memory system)
-    try {
-      await connectDatabase();
-      logger.info('Memory system ready (MongoDB)');
-    } catch (error) {
-      logger.warn(`MongoDB not available: ${(error as Error).message}`);
-      logger.warn('Memory system disabled. Run: docker compose up -d');
-    }
-
+    // Start HTTP server FIRST so port is available immediately
+    // (voice-agent and other services depend on this being reachable)
     const app = createServer();
     
     const server = app.listen(config.port, () => {
@@ -40,6 +33,17 @@ async function main() {
 
     // Setup WebSocket
     setupWebSocket(server);
+
+    // Connect to MongoDB AFTER server is up (non-blocking for startup)
+    // Memory features will be unavailable until this completes, but
+    // the rest of the system (bot control, A2A, tools) works fine.
+    try {
+      await connectDatabase();
+      logger.info('Memory system ready (MongoDB)');
+    } catch (error) {
+      logger.warn(`MongoDB not available: ${(error as Error).message}`);
+      logger.warn('Memory system disabled. Run: docker compose up -d');
+    }
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

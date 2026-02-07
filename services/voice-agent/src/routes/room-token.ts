@@ -8,6 +8,7 @@
 
 import { Router, Request, Response } from 'express';
 import { AccessToken, VideoGrant } from 'livekit-server-sdk';
+import { RoomAgentDispatch, RoomConfiguration } from '@livekit/protocol';
 import { v4 as uuidv4 } from 'uuid';
 
 export function createRoomTokenRouter(): Router {
@@ -55,6 +56,17 @@ export function createRoomTokenRouter(): Router {
         canSubscribe: true,
       };
       at.addGrant(grant);
+
+      // Explicit agent dispatch — when this participant connects,
+      // LiveKit will dispatch the 'dory-voice' agent to the room.
+      // This is more reliable than automatic dispatch (avoids race conditions).
+      at.roomConfig = new RoomConfiguration({
+        agents: [
+          new RoomAgentDispatch({
+            agentName: 'dory-voice',
+          }),
+        ],
+      });
 
       const token = await at.toJwt();
 

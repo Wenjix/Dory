@@ -9,6 +9,7 @@
  */
 
 const GAME_AGENT_URL = process.env.GAME_AGENT_URL || 'http://localhost:3000';
+const FETCH_TIMEOUT_MS = 5000; // 5s timeout for all game-agent HTTP calls
 
 // ---------------------------------------------------------------------------
 // Send conversation history for memory extraction
@@ -32,6 +33,7 @@ export async function sendConversationContext(
         sessionId,
         conversationHistory,
       }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!resp.ok) {
@@ -62,7 +64,8 @@ export async function fetchSystemContext(
 ): Promise<string | null> {
   try {
     const resp = await fetch(
-      `${GAME_AGENT_URL}/api/memory/system-context/${encodeURIComponent(userId)}`
+      `${GAME_AGENT_URL}/api/memory/system-context/${encodeURIComponent(userId)}`,
+      { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
     );
 
     if (!resp.ok) return null;
@@ -93,6 +96,7 @@ export async function notifySessionEnd(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, sessionId }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     console.log(`[ContextService] Session end notified for ${sessionId}`);
   } catch {

@@ -197,6 +197,10 @@ cli.runApp(
     wsURL: process.env.LIVEKIT_URL,
     apiKey: process.env.LIVEKIT_API_KEY,
     apiSecret: process.env.LIVEKIT_API_SECRET,
+    // Explicit agent name — must match the RoomAgentDispatch in room-token.ts.
+    // Using explicit dispatch avoids race conditions where the room is created
+    // before the worker has fully registered with LiveKit Cloud.
+    agentName: 'dory-voice',
     // Keep 1 idle worker process alive at all times.
     // This prevents the worker from being terminated between sessions,
     // which avoids a native ONNX runtime crash (Silero VAD mutex error)

@@ -60,11 +60,15 @@ function formatEvent(event: GameEvent): FormattedEvent | null {
         message: `Task failed: ${event.data.taskName} — ${event.data.error}`,
       };
 
-    case 'custom:structure_built':
+    case 'custom:structure_built': {
+      const isAIBuildComplete = event.metadata?.phase === 'completed' && event.data.blocksPlaced > 20;
       return {
-        priority: 'high',
-        message: `Built a ${event.data.structureType} using ${event.data.blockType} (${event.data.blocksPlaced} blocks)`,
+        priority: isAIBuildComplete ? 'critical' : 'high',
+        message: isAIBuildComplete
+          ? `Your structure is finished! Placed ${event.data.blocksPlaced} blocks in ${((event.metadata?.durationMs ?? 0) / 1000).toFixed(0)} seconds. Go check it out!`
+          : `Built a ${event.data.structureType} using ${event.data.blockType} (${event.data.blocksPlaced} blocks)`,
       };
+    }
 
     case 'system:bot_connected':
       return {

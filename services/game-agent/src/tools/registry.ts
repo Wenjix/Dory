@@ -509,6 +509,49 @@ const buildWallWherePlayerLooking: ToolDefinition = {
   },
 };
 
+// ─── AI Structure Generation Tools ────────────────────────────────────────────
+
+const generateStructure: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'generate_structure',
+    description:
+      'Generate and build a structure from a natural language description using AI. ' +
+      'The AI will design the structure and build it block-by-block in front of the player. ' +
+      'Requires the bot to have operator permissions (/op). ' +
+      'Use this for complex builds like houses, castles, temples, statues, etc.',
+    parameters: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description:
+            'Detailed description of what to build (e.g. "a small Japanese temple with red roof and stone garden", "a medieval watchtower with archer slits")',
+        },
+        player_username: {
+          type: 'string',
+          description: 'Username of the player to build in front of. If not provided, builds in front of the nearest player.',
+        },
+      },
+      required: ['description'],
+    },
+  },
+};
+
+const cancelStructure: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'cancel_structure',
+    description:
+      'Cancel the currently active AI structure generation. Use when the player says "stop building" or "cancel the build".',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+};
+
 // ─── Vision & Information Tools ───────────────────────────────────────────────
 
 const whatAmILookingAt: ToolDefinition = {
@@ -622,6 +665,7 @@ export const TOOL_CATEGORIES = {
     buildPillarWherePlayerLooking,
     buildWallWherePlayerLooking,
   ],
+  generation: [generateStructure, cancelStructure],
   vision: [whatAmILookingAt, whatIsPlayerLookingAt, scanArea],
   info: [getPosition, getNearbyPlayers, sendChat],
 } as const;

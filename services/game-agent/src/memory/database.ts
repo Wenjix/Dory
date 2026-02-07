@@ -28,7 +28,10 @@ export async function connectDatabase(): Promise<Db> {
     console.log(`[Memory DB] Connecting to MongoDB...`);
     console.log(`[Memory DB] URI: ${safeUri}`);
 
-    client = new MongoClient(MONGODB_URI);
+    client = new MongoClient(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,  // Fail fast if MongoDB isn't running
+      connectTimeoutMS: 5000,
+    });
     await client.connect();
 
     // Extract DB name from URI or default to 'dory'

@@ -112,6 +112,9 @@ importers:
       '@livekit/agents-plugin-silero':
         specifier: 1.0.37
         version: 1.0.37(@livekit/agents@1.0.37)(@livekit/rtc-node@0.13.24)
+      '@livekit/protocol':
+        specifier: ^1.44.0
+        version: 1.44.0
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
