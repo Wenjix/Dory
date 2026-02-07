@@ -162,7 +162,8 @@ dory/
 │   │   │   ├── memory/      # Memory system (MongoDB)
 │   │   │   ├── planning/    # Multi-step plan engine
 │   │   │   └── tools/       # Tool registry + executor
-│   │   └── test-console.html
+│   │   ├── test-console.html
+│   │   └── test-memory.html  # Memory dashboard (open in browser)
 │   └── voice-agent/         # Voice conversation + A2A bridge
 │       ├── src/
 │       │   ├── agent/       # LiveKit conversational agent
@@ -218,6 +219,13 @@ dory/
 | POST | `/api/sessions/:id/message` | Send message (LLM reasoning) |
 | POST | `/api/a2a/message` | A2A: receive command from voice agent |
 | GET | `/api/a2a/sessions` | A2A: list sessions with details |
+| GET | `/api/memory/stats/:userId` | Memory stats (counts by type) |
+| GET | `/api/memory/profile/:userId` | Player profile (LLM-generated) |
+| GET | `/api/memory/system-context/:userId` | Full text context for prompt enrichment |
+| GET | `/api/memory/memories?userId=X` | List memories (filter: type, tags, limit) |
+| GET | `/api/memory/summaries?userId=X` | List summaries (filter: type, sessionId) |
+| POST | `/api/memory/context` | Receive conversation context from voice agent |
+| POST | `/api/memory/session-end` | Trigger session-end summary generation |
 | WS | `/ws` | WebSocket interactive console |
 
 ### Voice Agent (port 4001)

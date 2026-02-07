@@ -3,6 +3,7 @@ import { config } from './config';
 import { createLogger } from '@dory/shared';
 import { setupWebSocket } from './websocket';
 import { createLLMClient, setLLMClient } from './llm';
+import { connectDatabase } from './memory/database';
 
 const logger = createLogger('game-agent');
 
@@ -18,6 +19,15 @@ async function main() {
       logger.warn('Bot will work without AI reasoning. Set API keys in .env to enable.');
     }
 
+    // Connect to MongoDB (memory system)
+    try {
+      await connectDatabase();
+      logger.info('Memory system ready (MongoDB)');
+    } catch (error) {
+      logger.warn(`MongoDB not available: ${(error as Error).message}`);
+      logger.warn('Memory system disabled. Run: docker compose up -d');
+    }
+
     const app = createServer();
     
     const server = app.listen(config.port, () => {
@@ -25,6 +35,7 @@ async function main() {
       logger.info(`Environment: ${config.env}`);
       logger.info(`Health check: http://localhost:${config.port}/health`);
       logger.info(`WebSocket console: ws://localhost:${config.port}/ws`);
+      logger.info(`Memory dashboard: open test-memory.html in browser`);
     });
 
     // Setup WebSocket
