@@ -2,7 +2,8 @@
  * Game Event Store
  *
  * In-memory storage for game events received from the game agent.
- * Events are stored per-session with priority and announcement tracking.
+ * Uses a single global queue (no per-session keying) since Dory
+ * is a single-player companion — one voice session, one game session.
  *
  * Note: This module lives in the main process (Express server).
  * The agent worker (forked child) fetches events via HTTP GET /api/events.
@@ -17,25 +18,16 @@ export interface StoredGameEvent {
   announced: boolean;
 }
 
-const store = new Map<string, StoredGameEvent[]>();
+/** Single global event queue */
+let events: StoredGameEvent[] = [];
 const MAX_EVENTS = 50;
 
-/** Default session key for when no session is specified */
-const DEFAULT_SESSION = '_default';
-
-/** Store a game event */
+/** Store a game event (sessionId accepted but ignored — single global queue) */
 export function storeEvent(
   priority: EventPriority,
   message: string,
-  sessionId?: string
+  _sessionId?: string
 ): void {
-  const key = sessionId || DEFAULT_SESSION;
-  let events = store.get(key);
-  if (!events) {
-    events = [];
-    store.set(key, events);
-  }
-
   events.push({
     timestamp: new Date(),
     priority,
@@ -49,31 +41,24 @@ export function storeEvent(
   }
 }
 
-/** Get all unannounced events that should be delivered (critical + high + medium) */
-export function getUnannounced(sessionId?: string): StoredGameEvent[] {
-  const key = sessionId || DEFAULT_SESSION;
-  const events = store.get(key) || [];
+/** Get all unannounced events */
+export function getUnannounced(_sessionId?: string): StoredGameEvent[] {
   return events.filter((e) => !e.announced);
 }
 
 /** Get unannounced events by priority */
 export function getUnannouncedByPriority(
   priority: EventPriority,
-  sessionId?: string
+  _sessionId?: string
 ): StoredGameEvent[] {
-  const key = sessionId || DEFAULT_SESSION;
-  const events = store.get(key) || [];
   return events.filter((e) => !e.announced && e.priority === priority);
 }
 
 /** Mark events as announced */
 export function markAnnounced(
-  sessionId?: string,
+  _sessionId?: string,
   filter?: (e: StoredGameEvent) => boolean
 ): void {
-  const key = sessionId || DEFAULT_SESSION;
-  const events = store.get(key);
-  if (!events) return;
   for (const ev of events) {
     if (!filter || filter(ev)) {
       ev.announced = true;
@@ -81,15 +66,12 @@ export function markAnnounced(
   }
 }
 
-/** Clear all events for a session */
-export function clearEvents(sessionId?: string): void {
-  const key = sessionId || DEFAULT_SESSION;
-  store.delete(key);
+/** Clear all events */
+export function clearEvents(_sessionId?: string): void {
+  events = [];
 }
 
 /** Get recent events for context */
-export function getRecent(count = 10, sessionId?: string): StoredGameEvent[] {
-  const key = sessionId || DEFAULT_SESSION;
-  const events = store.get(key) || [];
+export function getRecent(count = 10, _sessionId?: string): StoredGameEvent[] {
   return events.slice(-count);
 }
