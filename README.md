@@ -70,13 +70,16 @@ cp services/voice-agent/.env.example services/voice-agent/.env
 GAME_AGENT_PORT=3000
 
 # LLM — pick one provider: mistral, openai, or anthropic
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-...
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
 
-# Optional: set a specific model
+# Optional: set a specific model (defaults: mistral-large-latest, gpt-4o, claude-sonnet-4-20250514)
 # ANTHROPIC_MODEL=claude-sonnet-4-20250514
 # OPENAI_MODEL=gpt-4o
 # MISTRAL_MODEL=mistral-large-latest
+
+# MongoDB (memory system — started via docker compose)
+MONGODB_URI=mongodb://localhost:27017/dory
 ```
 
 **Voice Agent** (`services/voice-agent/.env`):
@@ -94,10 +97,16 @@ DEEPGRAM_API_KEY=...
 # TTS — ElevenLabs
 ELEVEN_API_KEY=...
 
-# LLM for voice conversation (OpenAI-compatible)
-LLM_API_KEY=...
-LLM_BASE_URL=https://api.groq.com/openai/v1  # or https://api.openai.com/v1
-LLM_MODEL=llama-3.3-70b-versatile
+# LLM for voice conversation (must support OpenAI-compatible function calling)
+# Option A: OpenAI GPT-4o-mini (reliable)
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o-mini
+
+# Option B: Groq + Qwen (fast, free)
+# LLM_API_KEY=gsk_...
+# LLM_BASE_URL=https://api.groq.com/openai/v1
+# LLM_MODEL=qwen/qwen3-32b
+# ⚠️ Do NOT use llama models on Groq — they don't call tools properly
 
 # Game Agent URL (A2A)
 GAME_AGENT_URL=http://localhost:3000
@@ -105,11 +114,18 @@ GAME_AGENT_URL=http://localhost:3000
 
 ### 3. Start MongoDB
 
+Make sure **Docker Desktop** is running, then:
+
 ```bash
 docker compose up -d
 ```
 
-This starts a local MongoDB on port 27017. Data persists in a Docker volume (`dory-mongo-data`).
+This starts a local MongoDB 7 on port 27017. Data persists in a Docker volume (`dory-mongo-data`).
+
+To check it's running:
+```bash
+docker ps   # should show "dory-mongo" container
+```
 
 ### 4. Start everything
 
@@ -144,6 +160,8 @@ pnpm dev:voice   # Voice agent only (port 4001)
    ask <sessionId> collect 5 oak logs
    ask <sessionId> build a cobblestone wall here
    ```
+
+5. **Memory dashboard** — open `services/game-agent/test-memory.html` in your browser to see stored memories, session summaries, player profile, and system context. Auto-refreshes every 5 seconds.
 
 ## Project Structure
 
@@ -259,6 +277,18 @@ pnpm dev
 - Create a bot session first (via test console or say "join the game")
 - Verify game-agent is running on port 3000
 - Check `GAME_AGENT_URL` in voice-agent `.env`
+
+### MongoDB / memory system not working
+- Make sure Docker Desktop is running, then `docker compose up -d`
+- Check with `docker ps` — you should see `dory-mongo`
+- Verify `MONGODB_URI=mongodb://localhost:27017/dory` in `services/game-agent/.env`
+- The game agent logs will say "Memory system ready (MongoDB)" on success, or warn if unavailable
+- Memory is optional — the bot works without it, you just won't get session summaries or player profile
+
+### Voice agent crashes with "mutex lock failed"
+- This is a known issue with the Silero VAD native runtime during worker shutdown
+- Usually harmless — the worker restarts automatically
+- If it persists, restart the voice agent: `pnpm dev:voice`
 
 ## License
 
