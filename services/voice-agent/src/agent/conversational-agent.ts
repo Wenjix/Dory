@@ -74,40 +74,57 @@ class GameAwareAgent extends voice.Agent {
 // Critical Event Polling
 // ============================================================================
 
-const CRITICAL_POLL_MS = 2000; // Check every 2 seconds
+const CRITICAL_POLL_MS = 2000;    // Check every 2 seconds
+const CRITICAL_COOLDOWN_MS = 8000; // After speaking, wait 8s before interrupting again
 
 /**
  * Start a background poll for critical events.
  * When a critical event is found, immediately trigger the agent to speak.
+ * Uses a cooldown to prevent rapid-fire interruptions that the SDK drops.
  */
 function startCriticalEventPoller(
   session: voice.AgentSession,
   onShutdown: (cb: () => void) => void
 ): void {
+  let lastInterruptTime = 0;
+
   const interval = setInterval(async () => {
     try {
       const events = await fetchPendingEvents();
       const criticals = events.filter((e) => e.priority === 'critical');
 
-      if (criticals.length > 0) {
-        const urgentMsg = criticals.map((e) => e.message).join('. ');
-        console.log(`[Agent] 🚨 CRITICAL EVENT — interrupting: ${urgentMsg}`);
+      if (criticals.length === 0) return;
 
-        // Mark critical events as acknowledged BEFORE speaking to avoid duplicates
-        await acknowledgeEvents(['critical']);
+      // Always acknowledge criticals so they don't pile up
+      await acknowledgeEvents(['critical']);
 
-        // Trigger the agent to speak immediately (interrupts current speech)
-        session.generateReply({
-          userInput: `[URGENT GAME ALERT] ${urgentMsg}. Tell the player immediately in one brief, urgent sentence!`,
-        });
+      // Check cooldown — skip the interrupt if we just spoke
+      const now = Date.now();
+      if (now - lastInterruptTime < CRITICAL_COOLDOWN_MS) {
+        console.log(`[Agent] 🚨 Critical events acknowledged but skipping interrupt (cooldown ${Math.round((CRITICAL_COOLDOWN_MS - (now - lastInterruptTime)) / 1000)}s remaining)`);
+        return;
       }
+
+      // Pick the most important message: prefer death > low health > damage
+      const deathEvent = criticals.find((e) => e.message.includes('died'));
+      const urgentMsg = deathEvent
+        ? deathEvent.message
+        : criticals[criticals.length - 1].message; // latest event
+
+      console.log(`[Agent] 🚨 CRITICAL EVENT — interrupting: ${urgentMsg}`);
+      lastInterruptTime = now;
+
+      // Trigger the agent to speak immediately (interrupts current speech)
+      session.generateReply({
+        userInput: `[URGENT GAME ALERT] ${urgentMsg}. Tell the player immediately in one brief, urgent sentence!`,
+      });
     } catch {
       // Silently ignore polling errors
     }
   }, CRITICAL_POLL_MS);
 
   onShutdown(() => clearInterval(interval));
-  console.log(`[Agent] 🔍 Critical event poller started (every ${CRITICAL_POLL_MS}ms)`);
+  console.log(`[Agent] 🔍 Critical event poller started (every ${CRITICAL_POLL_MS}ms, cooldown ${CRITICAL_COOLDOWN_MS / 1000}s)`);
 }
 
 // ============================================================================
