@@ -1,6 +1,7 @@
 import { MinecraftBot } from './minecraft-bot';
 import { SessionConfig, SessionId } from '@dory/shared';
 import { createLogger } from '@dory/shared';
+import { setupMinecraftEventListeners, setupA2AEventForwarder } from '../events';
 
 const logger = createLogger('bot-manager');
 
@@ -76,8 +77,12 @@ export class BotManager {
       sessions.set(sessionId, bot);
       botToSession.set(bot.bot, sessionId);
 
-      // Setup event handlers
+      // Setup local event handlers (error, disconnect, etc.)
       this.setupEventHandlers(sessionId, bot);
+
+      // Setup game event system (bus listeners + A2A forwarding)
+      setupMinecraftEventListeners(bot, sessionId);
+      setupA2AEventForwarder(sessionId);
 
       // Send welcome message when bot spawns
       bot.bot.once('spawn', () => {

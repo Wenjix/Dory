@@ -28,6 +28,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { ServerOptions, cli } from '@livekit/agents';
 import { createRoomTokenRouter } from './routes/room-token.js';
+import { storeEvent, getUnannounced, markAnnounced } from './events/event-store.js';
 
 // ============================================================================
 // Global Error Handlers
@@ -129,6 +130,37 @@ app.post('/api/debug/tools/:name', async (req, res) => {
   } catch (error) {
     res.json({ success: false, error: (error as Error).message });
   }
+});
+
+// ── Game Event Endpoints ─────────────────────────────────────────────────────
+// POST /api/events  — Game agent pushes events here
+// GET  /api/events  — Agent worker polls for unannounced events
+// POST /api/events/ack — Agent worker marks events as announced
+
+app.post('/api/events', (req, res) => {
+  const { priority, message, sessionId } = req.body;
+  if (!priority || !message) {
+    return res.status(400).json({ error: 'Missing priority or message' });
+  }
+  console.log(`[Events] Received [${priority.toUpperCase()}]: ${message.substring(0, 80)}`);
+  storeEvent(priority, message, sessionId);
+  res.json({ success: true });
+});
+
+app.get('/api/events', (req, res) => {
+  const sessionId = req.query.sessionId as string | undefined;
+  const events = getUnannounced(sessionId);
+  res.json({ events });
+});
+
+app.post('/api/events/ack', (req, res) => {
+  const { sessionId, priorities } = req.body;
+  if (priorities && Array.isArray(priorities)) {
+    markAnnounced(sessionId, (e) => priorities.includes(e.priority));
+  } else {
+    markAnnounced(sessionId);
+  }
+  res.json({ success: true });
 });
 
 // ============================================================================

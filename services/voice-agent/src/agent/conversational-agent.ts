@@ -19,10 +19,99 @@ import * as openai from '@livekit/agents-plugin-openai';
 
 import { VOICE_INSTRUCTIONS } from './prompt.js';
 import { gameTools } from '../tools/game-tools.js';
+import { fetchPendingEvents, acknowledgeEvents } from '../events/event-fetcher.js';
+
+// ============================================================================
+// Game-Aware Agent (extends voice.Agent with event injection)
+// ============================================================================
+
+/**
+ * Extends the base voice.Agent to inject game events into LLM context.
+ * - onUserTurnCompleted: injects HIGH/MEDIUM unannounced events before LLM call
+ */
+class GameAwareAgent extends voice.Agent {
+  override async onUserTurnCompleted(
+    chatCtx: any,
+    newMessage: any
+  ): Promise<void> {
+    try {
+      const events = await fetchPendingEvents();
+
+      // Filter to high + medium only (critical handled by polling, low is silent)
+      const contextEvents = events.filter(
+        (e) => e.priority === 'high' || e.priority === 'medium'
+      );
+
+      if (contextEvents.length > 0) {
+        const summary = contextEvents.map((e) => `• ${e.message}`).join('; ');
+        const prefix = `[IMPORTANT GAME UPDATE — You MUST mention these events in your reply before answering the player: ${summary}. Briefly weave them in naturally, then answer the player.]`;
+
+        // ChatMessage.content is an array of content parts (strings, images, etc.)
+        // Prepend our context string to the front of the array
+        if (Array.isArray(newMessage.content)) {
+          newMessage.content.unshift(prefix + '\n\n');
+        } else if (typeof newMessage.content === 'string') {
+          (newMessage as any).content = prefix + '\n\n' + newMessage.content;
+        }
+
+        // Acknowledge high+medium so they don't repeat
+        await acknowledgeEvents(['high', 'medium']);
+
+        // Log what the LLM will actually see
+        const textContent = Array.isArray(newMessage.content)
+          ? newMessage.content.filter((c: any) => typeof c === 'string').join('')
+          : newMessage.content;
+        console.log(`[Agent] 📢 Injected ${contextEvents.length} game events. LLM will see: "${textContent.substring(0, 150)}..."`);
+      }
+    } catch (err) {
+      // Non-fatal — don't break the conversation
+      console.error('[Agent] Event injection error:', (err as Error).message);
+    }
+  }
+}
+
+// ============================================================================
+// Critical Event Polling
+// ============================================================================
+
+const CRITICAL_POLL_MS = 2000; // Check every 2 seconds
+
+/**
+ * Start a background poll for critical events.
+ * When a critical event is found, immediately trigger the agent to speak.
+ */
+function startCriticalEventPoller(
+  session: voice.AgentSession,
+  onShutdown: (cb: () => void) => void
+): void {
+  const interval = setInterval(async () => {
+    try {
+      const events = await fetchPendingEvents();
+      const criticals = events.filter((e) => e.priority === 'critical');
+
+      if (criticals.length > 0) {
+        const urgentMsg = criticals.map((e) => e.message).join('. ');
+        console.log(`[Agent] 🚨 CRITICAL EVENT — interrupting: ${urgentMsg}`);
+
+        // Mark critical events as acknowledged BEFORE speaking to avoid duplicates
+        await acknowledgeEvents(['critical']);
+
+        // Trigger the agent to speak immediately (interrupts current speech)
+        session.generateReply({
+          userInput: `[URGENT GAME ALERT] ${urgentMsg}. Tell the player immediately in one brief, urgent sentence!`,
+        });
+      }
+    } catch {
+      // Silently ignore polling errors
+    }
+  }, CRITICAL_POLL_MS);
+
+  onShutdown(() => clearInterval(interval));
+  console.log(`[Agent] 🔍 Critical event poller started (every ${CRITICAL_POLL_MS}ms)`);
+}
 
 // ============================================================================
 // LiveKit Agent Definition
-// (Matches readyplayerx/voice-agent pattern exactly)
 // ============================================================================
 
 export default defineAgent({
@@ -87,11 +176,11 @@ export default defineAgent({
       },
     });
 
-    // ── Agent (instructions + tools) ──────────────────────────────────────
+    // ── Agent with game event injection ──────────────────────────────────
     const toolNames = Object.keys(gameTools);
     console.log(`[Agent] Tools (${toolNames.length}): [${toolNames.join(', ')}]`);
 
-    const agent = new voice.Agent({
+    const agent = new GameAwareAgent({
       instructions: VOICE_INSTRUCTIONS,
       llm: llm as any,
       tools: gameTools,
@@ -135,9 +224,14 @@ export default defineAgent({
     await session.start({ agent, room: ctx.room });
     console.log(`[Agent] ✅ Agent is LIVE — session=${sessionId}, tools=[${toolNames.join(', ')}]`);
 
+    // ── Start critical event poller ──────────────────────────────────────
+    const shutdownCallbacks: (() => void)[] = [];
+    startCriticalEventPoller(session, (cb) => shutdownCallbacks.push(cb));
+
     // ── Shutdown ──────────────────────────────────────────────────────────
     ctx.addShutdownCallback(async () => {
       console.log(`[Agent] Session ending: ${sessionId}`);
+      shutdownCallbacks.forEach((cb) => cb());
     });
   },
 });
