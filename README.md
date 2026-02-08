@@ -27,43 +27,58 @@
 
 Dory is an open-source AI companion that lives inside your Minecraft world. Players talk to Dory with their voice, and she listens, thinks, remembers, and acts — collecting resources, crafting items, building structures, and holding a natural conversation the whole time.
 
-Under the hood, Dory is a **two-agent system** connected by a lightweight Agent-to-Agent (A2A) protocol. This architecture cleanly separates *how the player communicates* (voice) from *what happens in the game* (bot actions), making it straightforward to swap out components, add new games, or integrate into existing projects.
+Under the hood, Dory is a **six-service system** with a web frontend, persona creation tools, voice interaction, and in-game AI agents. The architecture cleanly separates *how the player communicates* (voice) from *what happens in the game* (bot actions), making it straightforward to swap out components, add new games, or integrate into existing projects.
 
 ### Key Features
 
-- **Voice Conversation** — Talk naturally using your microphone. Dory listens (Deepgram STT), thinks (LLM), and speaks back (ElevenLabs TTS) in real time via LiveKit.
-- **In-Game Actions** — Follow players, collect resources, craft items, manage inventory, fight mobs, and navigate the world using 30+ tool-calling capabilities.
-- **Multi-Step Planning** — Complex requests like *"gather wood, craft planks, and make me a crafting table"* are automatically broken into a plan and executed step by step.
-- **AI Structure Generation** — Say *"build me a medieval castle"* and watch it materialize block by block. An LLM generates JavaScript build code, a sandbox executes it, and blocks are placed progressively in the live world.
-- **Persistent Memory** — Dory remembers your preferences, past conversations, and goals across sessions using MongoDB-backed episodic, semantic, and procedural memory.
-- **Event-Driven Awareness** — Game events (damage, player joins, task completion) are prioritized and forwarded to the voice agent. Dory reacts to critical events immediately — if she takes fatal damage, she'll tell you about it mid-sentence.
-- **A2A Protocol** — Voice and game agents communicate over simple HTTP REST. Clean separation means you can replace either agent, add new ones, or integrate the game agent with a different interface (text chat, Discord bot, web UI).
+- **🎨 Custom Persona Creation** — Build unique AI companions through an interactive chat interface. Define personality, appearance, gaming style, and voice — all through natural conversation.
+- **🌐 Web Application** — Beautiful Next.js frontend with seamless mode transitions between Gatekeeper Chat, Persona Builder, and Gaming Hub. State machine architecture enables smooth handoffs between agents.
+- **🎤 Voice Conversation** — Talk naturally using your microphone. Dory listens (Deepgram STT), thinks (LLM), and speaks back (ElevenLabs TTS) in real time via LiveKit.
+- **🎮 In-Game Actions** — Follow players, collect resources, craft items, manage inventory, fight mobs, and navigate the world using 30+ tool-calling capabilities.
+- **🧠 Multi-Step Planning** — Complex requests like *"gather wood, craft planks, and make me a crafting table"* are automatically broken into a plan and executed step by step.
+- **🏗️ AI Structure Generation** — Say *"build me a medieval castle"* and watch it materialize block by block. An LLM generates JavaScript build code, a sandbox executes it, and blocks are placed progressively in the live world.
+- **💾 Persistent Memory** — Dory remembers your preferences, past conversations, and goals across sessions using MongoDB-backed episodic, semantic, and procedural memory.
+- **⚡ Event-Driven Awareness** — Game events (damage, player joins, task completion) are prioritized and forwarded to the voice agent. Dory reacts to critical events immediately — if she takes fatal damage, she'll tell you about it mid-sentence.
 
 ---
 
 ## Architecture
 
-```
-                     Voice (WebRTC / LiveKit)
-  Player  <───────────────────────────────────>  Voice Agent
-  (Mic + Speaker)                                  (Port 4001)
-                                                      │
-                                                      │  HTTP / A2A Protocol
-                                                      ▼
-                                                  Game Agent
-                                                  (Port 3000)
-                                                      │
-                                              ┌───────┼───────┐
-                                              ▼       ▼       ▼
-                                           Tools   Planning   Memory
-                                              │                 │
-                                              ▼                 ▼
-                                       Minecraft Server      MongoDB
+Dory is a **six-service system** that orchestrates user interaction, persona creation, voice communication, and game control:
+
+```mermaid
+flowchart LR
+    subgraph frontend["Web App - Port 3001"]
+        NextJS["Next.js Frontend"]
+    end
+    subgraph gatekeeper["Gatekeeper - Port 4002"]
+        GK["Stone Golem Agent"]
+    end
+    subgraph persona["Persona Builder - Port 4003"]
+        PB["Persona Architect Agent"]
+    end
+    subgraph voice["Voice Agent - Port 4001"]
+        VA["LiveKit Voice Pipeline"]
+    end
+    subgraph game["Game Agent - Port 3000"]
+        GA["Minecraft Bot"]
+    end
+
+    NextJS -->|WebSocket| GK
+    NextJS -->|WebSocket| PB
+    NextJS -->|WebRTC/LiveKit| VA
+    VA -->|HTTP/A2A| GA
+    GA --> Minecraft
+    PB --> MongoDB
+    GA --> MongoDB
 ```
 
 | Service | Port | Role |
 |---------|------|------|
-| **Voice Agent** | 4001 | LiveKit voice pipeline (VAD → STT → LLM → TTS), game-event narration, conversation memory sync |
+| **Web App** | 3001 | Next.js frontend — single entry point, state machine for mode transitions, three-screen UI (Gatekeeper Chat, Persona Builder, Gaming Hub) |
+| **Gatekeeper Agent** | 4002 | Stone golem personality — routes users to create personas or play games, manages persona selection |
+| **Persona Builder Agent** | 4003 | Interactive persona creation — guides users through species → visual details → name → avatar generation → personality → gaming style → voice selection → save |
+| **Voice Agent** | 4001 | LiveKit voice pipeline (VAD → STT → LLM → TTS), game-event narration, conversation memory sync, loads persona personality + custom voiceId |
 | **Game Agent** | 3000 | Minecraft bot control via mineflayer, LLM reasoning with tool calling, multi-step planning, AI structure generation, persistent memory |
 | **Shared** | — | Common types, logger, utilities (`@dory/shared`) |
 
@@ -80,6 +95,52 @@ If a step fails (e.g., missing materials), the engine **re-plans** automatically
 <p align="center">
   <img src="img/Smart-replanning_v2.png" alt="Smart Replanning" width="600" />
 </p>
+
+---
+
+## Dory AI Web Application
+
+The web application (`apps/web`) is a Next.js frontend that serves as the single entry point for users. It uses a **state machine pattern** (`StateMachine` + `WebSocketManager`) to manage seamless transitions between three application modes: `GATEKEEPER`, `PERSONA_BUILDER`, and `GAMER_AGENT`.
+
+### Three-Screen Design
+
+- **Gatekeeper Chat** (landing page): Expandable chat UI connected to the Gatekeeper Agent via WebSocket. Users land here and see a hero section with CTAs ("Create New Persona" / "Let's Play"). The Gatekeeper — a stone golem personality — guides users to either create personas or select existing ones to play games.
+
+- **Persona Builder**: 3-column layout (avatar preview, trait cards, chat) connected to the Persona Builder Agent via WebSocket. Real-time persona updates via `persona_update` / `operation_status` messages. Users interactively build personas through a conversational flow: species → visual details → name → avatar generation → personality → gaming style → voice selection → save.
+
+- **Gaming Hub**: 2-column layout (companion sidebar with voice controls, chat transcript) connected to the Voice Agent via LiveKit WebRTC. Supports both voice and text communication. The companion sidebar shows the active persona's avatar, voice controls (mic mute, companion mute), game status, and chat history.
+
+### User Flow
+
+1. **User opens web app** → Lands on Gatekeeper Chat (hero view with CTAs)
+2. **"I want to play"** → Gatekeeper fetches popular personas → User picks one → Backend sends `mode_change` to `GAMER_AGENT` → Gaming Hub loads with LiveKit voice connection
+3. **"I want to create a persona"** → Backend sends `mode_change` to `PERSONA_BUILDER` → Persona Builder chat interface → User creates persona through conversation → Persona saved → Option to play with new persona or return to Gatekeeper
+
+### State Machine
+
+The frontend `StateMachine` orchestrates mode transitions driven by `mode_change` WebSocket messages from the backend:
+
+```mermaid
+stateDiagram-v2
+    [*] --> GATEKEEPER: User opens app
+    GATEKEEPER --> PERSONA_BUILDER: "Create persona" -> mode_change
+    GATEKEEPER --> GAMER_AGENT: "Play" -> select persona -> mode_change
+    PERSONA_BUILDER --> GATEKEEPER: Back / persona saved -> mode_change
+    PERSONA_BUILDER --> GAMER_AGENT: Persona saved -> play -> mode_change
+    GAMER_AGENT --> GATEKEEPER: End session -> page reload
+```
+
+Each transition: (1) disconnects current WebSocket, (2) generates/reuses sessionId for the target mode, (3) connects to the new agent's WebSocket passing `conversationSummary` for context continuity, (4) the UI renders the corresponding screen (GatekeeperChat / PersonaBuilder / GamingHub).
+
+### Mode Switching
+
+The backend agents (Gatekeeper, Persona Builder) send `mode_change` WebSocket messages when they detect user intent. The frontend `StateMachine` handles:
+- Disconnecting from the current agent's WebSocket
+- Connecting to the new agent's WebSocket with the appropriate sessionId
+- Passing `conversationSummary` (if available) to preserve context across mode transitions
+- Updating the UI to render the correct screen component
+
+This architecture enables seamless handoffs between agents while maintaining conversation context, creating a unified experience despite multiple backend services.
 
 ---
 
@@ -113,6 +174,9 @@ Each service has its own `.env`. Copy the examples:
 ```bash
 cp services/game-agent/.env.example services/game-agent/.env
 cp services/voice-agent/.env.example services/voice-agent/.env
+cp services/gatekeeper-agent/.env.example services/gatekeeper-agent/.env
+cp services/persona-builder-agent/.env.example services/persona-builder-agent/.env
+cp apps/web/.env.example apps/web/.env
 ```
 
 #### Game Agent (`services/game-agent/.env`)
@@ -170,6 +234,58 @@ GAME_AGENT_URL=http://localhost:3000
 > ```
 > Avoid llama models on Groq — they don't call tools reliably.
 
+#### Gatekeeper Agent (`services/gatekeeper-agent/.env`)
+
+```bash
+PORT=4002
+
+# Persona Builder Service URL
+PERSONA_BUILDER_URL=http://localhost:4003
+
+# Groq API Key (required for LLM)
+GROQ_API_KEY=gsk_...
+```
+
+#### Persona Builder Agent (`services/persona-builder-agent/.env`)
+
+```bash
+PORT=4003
+
+# MongoDB Connection
+MONGODB_URI=mongodb://localhost:27017/dory
+
+# LLM - OpenAI (or OpenRouter)
+OPENAI_API_KEY=sk-...
+# Optional: Set to 'https://openrouter.ai/api/v1' for OpenRouter
+# OPENAI_BASE_URL=https://openrouter.ai/api/v1
+
+# Image Generation - Gemini
+GEMINI_API_KEY=...
+
+# Cloudflare R2 Storage
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=personas
+R2_PUBLIC_URL=https://your-r2-bucket.r2.dev
+
+# ElevenLabs (optional, for voice matching)
+# ELEVEN_API_KEY=...
+```
+
+#### Web App (`apps/web/.env`)
+
+All variables are optional — defaults work for local development:
+
+```bash
+# Optional: Override default agent URLs if needed
+# NEXT_PUBLIC_GATEKEEPER_WS_URL=ws://localhost:4002/ws
+# NEXT_PUBLIC_PERSONA_WS_URL=ws://localhost:4003/ws
+# NEXT_PUBLIC_VOICE_AGENT_WS_URL=ws://localhost:4001/ws
+# NEXT_PUBLIC_VOICE_AGENT_API_URL=http://localhost:4001
+# NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
+```
+
 ### 3. Start MongoDB
 
 Make sure **Docker Desktop** is running:
@@ -186,34 +302,50 @@ docker ps   # should show "dory-mongo" container
 
 > Memory is optional — the bot works without it, but you won't get session summaries or player profiles.
 
-### 4. Start everything
+### 4. Initialize Database
+
+Push the Prisma schema for the Persona Builder Agent:
+
+```bash
+cd services/persona-builder-agent
+npx prisma db push
+cd ../..
+```
+
+### 5. Start everything
 
 ```bash
 pnpm dev
 ```
 
-This builds the shared package, then starts both services with hot-reload via Turborepo.
+This builds the shared package, then starts all services (web, gatekeeper, persona-builder, voice, game) with hot-reload via Turborepo.
 
 Or start services individually:
 
 ```bash
-pnpm dev:game    # Game agent only (port 3000)
-pnpm dev:voice   # Voice agent only (port 4001)
+pnpm dev:web         # Web app only (port 3001)
+pnpm dev:gatekeeper  # Gatekeeper agent only (port 4002)
+pnpm dev:persona     # Persona builder agent only (port 4003)
+pnpm dev:game        # Game agent only (port 3000)
+pnpm dev:voice       # Voice agent only (port 4001)
 ```
 
-### 5. Connect and play
+### 6. Connect and play
 
 1. **Start your Minecraft server** — Java Edition, offline mode recommended for local testing.
 
-2. **Open the voice test page** at `services/voice-agent/test-voice.html` in your browser and click Connect.
+2. **Open the web application** at `http://localhost:3001` in your browser. This is the primary way to use Dory — you'll land on the Gatekeeper Chat interface.
 
-3. **Talk to Dory:**
-   - *"Join the game"* — connects the bot to Minecraft
-   - *"Follow me"* — bot follows your player
-   - *"Collect some oak wood"* — gathers resources
-   - *"Craft a crafting table"* — crafts items
-   - *"Build a pillar where I'm looking"* — places blocks at your crosshair
-   - *"Build me a medieval castle"* — AI generates and places the structure block by block
+3. **Using the web app:**
+   - **Create a persona**: Click "Create New Persona" or say *"I want to create a persona"* → Follow the interactive persona builder flow
+   - **Play with a persona**: Click "Let's Play" or say *"I want to play"* → Select a persona → Gaming Hub opens with voice controls
+   - **Talk to Dory in Gaming Hub:**
+     - *"Join the game"* — connects the bot to Minecraft
+     - *"Follow me"* — bot follows your player
+     - *"Collect some oak wood"* — gathers resources
+     - *"Craft a crafting table"* — crafts items
+     - *"Build a pillar where I'm looking"* — places blocks at your crosshair
+     - *"Build me a medieval castle"* — AI generates and places the structure block by block
 
 4. **Alternative interfaces:**
    - **Text console** — open `services/game-agent/test-console.html` for a browser-based chat
@@ -333,7 +465,36 @@ dory/
 │           ├── types/          # Session, Minecraft, Agent interfaces
 │           └── utils/          # Logger, sleep, retry helpers
 │
+├── apps/
+│   └── web/                    # @dory/web — Next.js frontend
+│       └── src/
+│           ├── components/     # UI components (buttons, dialogs, inputs)
+│           ├── config/         # Agent URL configuration
+│           ├── contexts/       # UnifiedAgentContext (state management)
+│           ├── hooks/          # useLiveKitSession, useVoiceAgent
+│           ├── pages/          # Next.js pages (_app, index)
+│           ├── screens/         # Main screens (home with GatekeeperChat, PersonaBuilder, GamingHub)
+│           ├── services/       # StateMachine, WebSocketManager, chat persistence
+│           ├── theme/          # Styled-components theme (colors, animations)
+│           └── types/          # Agent types (AppMode, WSMessage, etc.)
+│
 └── services/
+    ├── gatekeeper-agent/       # @dory/gatekeeper-agent
+    │   └── src/
+    │       ├── agent/          # Gatekeeper agent logic + prompt
+    │       ├── config/         # Environment configuration
+    │       ├── services/       # Session management, WebSocket server
+    │       └── tools/          # Gatekeeper tools (fetchPopularPersonas, changeMode)
+    │
+    ├── persona-builder-agent/   # @dory/persona-builder-agent
+    │   └── src/
+    │       ├── agent/          # Persona builder agent logic
+    │       ├── config/         # Environment configuration
+    │       ├── db/             # Prisma client
+    │       ├── services/       # WebSocket server, persona operations
+    │       ├── tools/          # Persona builder tools (savePersona, generateAvatar)
+    │       └── types/          # Persona data types
+    │
     ├── game-agent/             # @dory/game-agent
     │   └── src/
     │       ├── a2a/            # Agent card + A2A message handler
@@ -349,9 +510,10 @@ dory/
     │
     └── voice-agent/            # @dory/voice-agent
         └── src/
-            ├── agent/          # LiveKit conversational agent + personality prompt
+            ├── agent/          # LiveKit conversational agent + persona prompt builder
+            ├── clients/        # Persona client (fetches persona data from persona-builder)
             ├── events/         # Event store + fetcher (polls game events)
-            ├── routes/         # Room token generation
+            ├── routes/          # Room token generation
             ├── services/       # Context service (memory sync)
             ├── tools/          # HTTP tools for game agent control
             └── utils/          # Logger
@@ -364,8 +526,11 @@ dory/
 | Command | Description |
 |---------|-------------|
 | `pnpm dev` | Start all services with hot-reload |
-| `pnpm dev:game` | Start game agent only |
-| `pnpm dev:voice` | Start voice agent only |
+| `pnpm dev:web` | Start web app only (port 3001) |
+| `pnpm dev:gatekeeper` | Start gatekeeper agent only (port 4002) |
+| `pnpm dev:persona` | Start persona builder agent only (port 4003) |
+| `pnpm dev:game` | Start game agent only (port 3000) |
+| `pnpm dev:voice` | Start voice agent only (port 4001) |
 | `pnpm build` | Build all packages |
 | `pnpm build:shared` | Build shared package only |
 | `pnpm typecheck` | Run TypeScript type checks |
@@ -394,6 +559,28 @@ dory/
 ---
 
 ## API Reference
+
+### Gatekeeper Agent — `http://localhost:4002`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/api/sessions/:id/debug` | Get session debug info |
+| `WS` | `/ws` | WebSocket connection (mode: GATEKEEPER) |
+
+### Persona Builder Agent — `http://localhost:4003`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/api/personas/public` | List all published personas (public gallery) |
+| `GET` | `/api/personas/public/:id` | Get public persona by ID |
+| `GET` | `/api/personas` | List user's own personas (hardcoded user-123) |
+| `GET` | `/api/personas/:id` | Get persona by ID |
+| `DELETE` | `/api/personas/:id` | Delete persona |
+| `GET` | `/api/personas/:id/conversational-prompt` | Get conversational prompt for voice agent |
+| `GET` | `/api/personas/:id/gaming-prompt` | Get gaming prompt for game agent |
+| `WS` | `/ws` | WebSocket connection (mode: PERSONA_BUILDER) |
 
 ### Game Agent — `http://localhost:3000`
 
