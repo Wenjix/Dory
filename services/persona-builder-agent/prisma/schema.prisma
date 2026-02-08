@@ -1,0 +1,100 @@
+// Prisma schema for Persona Builder Agent
+// Uses MongoDB for storing AI companion personas
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// Persona model - represents an AI gaming companion
+// Comprehensive structure for generating voice agent prompts
+model Persona {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   // Reference to auth-service user ID
+
+  // Core Identity
+  // { name, tagline, backstory, species, ageImpression }
+  identity       Json
+
+  // Detailed Personality
+  // { archetype, traits[], emotionalTendency, quirks[], values[], fears[], catchphrases[] }
+  personality    Json
+
+  // Communication Style
+  // { tone, responseLength, formality, humorStyle, encouragementStyle, errorHandling, vocabulary, usesEmotes }
+  communication  Json
+
+  // Gaming Behavior
+  // { playstyle, skills[], preferences[], riskTolerance, teamworkStyle, winReaction, loseReaction, challengeApproach, favoriteActivities[] }
+  gaming         Json
+
+  // Voice Configuration
+  // { pitch, speed, accent, energy, mannerisms[] }
+  voice          Json
+
+  // Visual Identity
+  // { primary, secondary, avatarUrl, skinUrl, artStyle }
+  visualIdentity Json
+
+  // Example Responses
+  // { greeting, farewell, celebration, setback, encouragement, confusion }
+  examples       Json
+
+  // Summary description
+  description    String?
+
+  // Human-readable descriptions for frontend (generated after each phase)
+  personalityDescription String?  // Generated after personality phase
+  gamingDescription      String?  // Generated after gaming phase
+
+  // LLM-generated prompts for agents
+  // Generated when persona is saved
+  conversationalPrompt String?  // For voice agent (personality, tone, responses)
+  gamingPrompt         String?  // For gaming agents (playstyle, behavior in-game)
+
+  // Status: draft or published
+  status         String   @default("draft")
+
+  // Schema version for migrations
+  schemaVersion  Int      @default(3)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("personas")
+}
+
+// Conversation history and session state
+model Conversation {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionId String   @unique // WebSocket session ID
+  userId    String?  // Optional: user ID if authenticated
+
+  // Conversation messages (stored as JSON array)
+  messages  Json     // Array of { role: 'user'|'assistant'|'system', content: string, timestamp: string }
+
+  // Conversation summary for context management
+  summary   String?
+
+  // Draft persona state (stored as JSON)
+  draftPersona Json? // DraftPersona structure
+
+  // Session metadata
+  editingPersonaId String? // ID of persona being edited (null if creating new)
+  authenticated    Boolean  @default(false)
+  authErrorOccurred Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastActivityAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([lastActivityAt])
+  @@map("conversations")
+}
