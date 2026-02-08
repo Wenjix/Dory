@@ -78,6 +78,13 @@ if (missingOptional.length > 0) {
 const gameAgentUrl = process.env.GAME_AGENT_URL || 'http://localhost:3000';
 console.log(`Game Agent URL: ${gameAgentUrl}`);
 
+// Persona Builder
+if (!process.env.PERSONA_BUILDER_URL) {
+  console.warn('PERSONA_BUILDER_URL not set, using default: http://localhost:4003');
+} else {
+  console.log(`Persona Builder URL: ${process.env.PERSONA_BUILDER_URL}`);
+}
+
 // ============================================================================
 // Express App
 // ============================================================================
