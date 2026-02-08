@@ -16,6 +16,7 @@ Under the hood, Dory is a **two-agent system** connected by a lightweight Agent-
 ### Key Features
 
 - **Voice Conversation** — Talk naturally using your microphone. Dory listens (Deepgram STT), thinks (LLM), and speaks back (ElevenLabs TTS) in real time via LiveKit.
+- **Custom Personas** — Create unique AI companions with distinct personalities, voice, and gaming style via the Persona Builder. The voice agent loads the persona's prompt and custom ElevenLabs voice automatically.
 - **In-Game Actions** — Follow players, collect resources, craft items, manage inventory, fight mobs, and navigate the world using 30+ tool-calling capabilities.
 - **Multi-Step Planning** — Complex requests like *"gather wood, craft planks, and make me a crafting table"* are automatically broken into a plan and executed step by step.
 - **AI Structure Generation** — Say *"build me a medieval castle"* and watch it materialize block by block. An LLM generates JavaScript build code, a sandbox executes it, and blocks are placed progressively in the live world.
@@ -32,22 +33,24 @@ Under the hood, Dory is a **two-agent system** connected by a lightweight Agent-
   Player  <───────────────────────────────────>  Voice Agent
   (Mic + Speaker)                                  (Port 4001)
                                                       │
-                                                      │  HTTP / A2A Protocol
-                                                      ▼
-                                                  Game Agent
-                                                  (Port 3000)
-                                                      │
-                                              ┌───────┼───────┐
-                                              ▼       ▼       ▼
-                                           Tools   Planning   Memory
-                                              │                 │
-                                              ▼                 ▼
-                                       Minecraft Server      MongoDB
+                                         ┌────────────┼────────────┐
+                                         │ HTTP                    │ HTTP
+                                         ▼                         ▼
+                                    Persona Builder           Game Agent
+                                    (Port 4003)               (Port 3000)
+                                         │                         │
+                                         ▼                 ┌───────┼───────┐
+                                      MongoDB              ▼       ▼       ▼
+                                                        Tools   Planning   Memory
+                                                           │                 │
+                                                           ▼                 ▼
+                                                    Minecraft Server      MongoDB
 ```
 
 | Service | Port | Role |
 |---------|------|------|
-| **Voice Agent** | 4001 | LiveKit voice pipeline (VAD → STT → LLM → TTS), game-event narration, conversation memory sync |
+| **Voice Agent** | 4001 | LiveKit voice pipeline (VAD → STT → LLM → TTS), persona loading, custom voice, game-event narration, conversation memory sync |
+| **Persona Builder** | 4003 | Persona creation (identity, personality, voice, avatar). Serves persona prompts + voiceId to the voice agent |
 | **Game Agent** | 3000 | Minecraft bot control via mineflayer, LLM reasoning with tool calling, multi-step planning, AI structure generation, persistent memory |
 | **Shared** | — | Common types, logger, utilities (`@dory/shared`) |
 
@@ -130,6 +133,9 @@ LLM_MODEL=gpt-4o-mini
 
 # Game Agent URL (A2A connection)
 GAME_AGENT_URL=http://localhost:3000
+
+# Persona Builder (optional — enables custom persona loading)
+PERSONA_BUILDER_URL=http://localhost:4003
 ```
 
 > **Tip — Budget-friendly voice LLM:** You can use Groq with Qwen for the voice agent's LLM at no cost:
@@ -201,6 +207,8 @@ pnpm dev:voice   # Voice agent only (port 4001)
 | Capability | Description |
 |------------|-------------|
 | Voice pipeline | Silero VAD → Deepgram Nova 3 STT → LLM → ElevenLabs TTS |
+| Custom personas | Load persona personality + custom ElevenLabs voiceId from persona-builder |
+| Conversation handoff | Accept conversation summary from previous agent for continuity |
 | Real-time events | Critical game events (death, low health) interrupt Dory mid-sentence |
 | Event narration | High/medium events injected into LLM context before each turn |
 | Memory sync | Conversation history sent to game agent every 60s for preference extraction |
@@ -276,9 +284,10 @@ dory/
     │
     └── voice-agent/            # @dory/voice-agent
         └── src/
-            ├── agent/          # LiveKit conversational agent + personality prompt
+            ├── agent/          # LiveKit conversational agent, prompt, persona-prompt-builder
+            ├── clients/        # Persona client (fetches persona data + voiceId)
             ├── events/         # Event store + fetcher (polls game events)
-            ├── routes/         # Room token generation
+            ├── routes/         # Room token generation (supports personaId)
             ├── services/       # Context service (memory sync)
             ├── tools/          # HTTP tools for game agent control
             └── utils/          # Logger
@@ -349,7 +358,7 @@ dory/
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `POST` | `/api/room-token` | Generate LiveKit room token |
+| `POST` | `/api/room-token` | Generate LiveKit room token. Optional body: `{ personaId, conversationSummary }` |
 | `POST` | `/api/events` | Receive game events from game agent |
 | `GET` | `/api/events` | Poll unannounced events (used by agent worker) |
 | `POST` | `/api/events/ack` | Mark events as announced |
@@ -410,7 +419,7 @@ Dory's architecture is designed to be modular and extensible:
 
 - **Add new tools** — Define a tool in `tools/registry.ts`, implement it in `tools/executor.ts`. The LLM discovers tools automatically via function calling.
 - **Swap LLM providers** — Change `LLM_PROVIDER` in `.env`. OpenAI, Anthropic, and Mistral work out of the box. Add new providers by implementing the `LLMProvider` interface.
-- **Change the voice** — Swap `TTS_VOICE_ID` in the voice agent config, or replace ElevenLabs with another TTS provider.
+- **Change the voice** — Swap `TTS_VOICE_ID` in the voice agent config, pass a `personaId` to `/api/room-token` to use a persona's custom voice, or replace ElevenLabs with another TTS provider.
 - **Replace the game** — The A2A protocol is game-agnostic. Replace the mineflayer bot with any game's API and the voice agent still works.
 - **Add memory types** — Extend the memory system with new document types in `memory/types.ts`.
 
