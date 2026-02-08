@@ -37,13 +37,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   const modes: { id: ChatMode; icon: typeof Shield; label: string; disabled?: boolean; tooltip?: string }[] = [
     { id: 'landing', icon: Shield, label: 'Gatekeeper' },
     { id: 'persona-builder', icon: Hammer, label: 'Persona Builder' },
-    {
-      id: 'gaming-agent',
-      icon: Gamepad2,
-      label: 'Gaming Agent',
-      disabled: true,
-      tooltip: 'You cannot trigger the gaming mode manually'
-    },
+    { id: 'gaming-agent', icon: Gamepad2, label: 'Gaming Agent' },
   ]
 
   const handleSubmit = useCallback(

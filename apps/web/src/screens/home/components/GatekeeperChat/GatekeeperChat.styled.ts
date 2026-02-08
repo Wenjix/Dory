@@ -205,6 +205,7 @@ export const HeroTitle = styled.h1`
 
 export const HeroTitleGradient = styled.span`
   color: ${scColors.yellow.base};
+  font-family: 'Luckiest Guy', cursive;
   text-shadow:
     5px 5px 0px ${scColors.black},
     -2px -2px 0px ${scColors.black},
@@ -712,6 +713,51 @@ export const QuickReplyChip = styled.button<{ $delay?: number }>`
 
   &:active {
     background: ${scColors.yellow.base}40;
+  }
+`
+
+// ==================== LANDING SUGGESTIONS ====================
+
+export const LandingSuggestions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem;
+  margin-bottom: 0.5rem;
+`
+
+export const LandingSuggestionChip = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 200, 50, 0.35);
+  border: 2.5px solid rgba(255, 180, 0, 0.3);
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  animation: ${fadeInUp} 300ms ease forwards;
+
+  svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    background: rgba(255, 200, 50, 0.5);
+    border-color: rgba(255, 180, 0, 0.45);
+    color: rgba(0, 0, 0, 0.85);
+  }
+
+  &:active {
+    background: rgba(255, 200, 50, 0.6);
+    transform: translateY(1px);
   }
 `
 

@@ -118,8 +118,8 @@ export const ModeButton = styled.button<{ $active?: boolean; $disabled?: boolean
   justify-content: center;
   padding: 0.375rem;
   border-radius: 6px;
-  background: ${props => props.$active ? `${props.$accentColor || scColors.blue.base}20` : 'transparent'};
-  border: ${props => props.$active ? `2px solid ${props.$accentColor || scColors.blue.base}40` : '2px solid transparent'};
+  background: ${props => props.$active ? `${props.$accentColor || scColors.blue.base}38` : 'transparent'};
+  border: ${props => props.$active ? `2px solid ${props.$accentColor || scColors.blue.base}80` : '2px solid transparent'};
   cursor: ${props => props.$disabled ? 'default' : 'pointer'};
   transition: all 150ms ease;
 
@@ -165,7 +165,7 @@ export const ModeButton = styled.button<{ $active?: boolean; $disabled?: boolean
       svg {
         color: ${props.$active ? (props.$accentColor || scColors.blue.base) : 'rgba(0,0,0,0.5)'};
       }
-      background: ${props.$active ? `${props.$accentColor || scColors.blue.base}30` : 'rgba(0,0,0,0.06)'};
+      background: ${props.$active ? `${props.$accentColor || scColors.blue.base}50` : 'rgba(0,0,0,0.06)'};
     `}
   }
 `
