@@ -221,50 +221,14 @@ export async function handleMessage(
     `[${sessionId}] Handling message: "${userMessage}" (complex=${complex}, chat=${isChat}, activePlan=${!!activePlan}, history=${history.length})`
   );
 
-  // ── If bot is busy with a plan and user sends an action request ─────────
-  // Don't silently cancel — tell them we're busy and ask if they want to stop.
-  // For chat/questions, respond normally without interrupting the plan.
+  // ── If bot is busy with a plan and user sends a new action request ──────
+  // Cancel the active plan immediately and process the new request.
+  // Voice users expect instant responsiveness — asking "want me to stop?"
+  // creates a confusing loop since confirmations don't route correctly.
   if (activePlan && !isChat) {
-    // Describe what the bot is currently doing
-    const currentStep = activePlan.steps[activePlan.currentStepIndex];
-    const doing = currentStep
-      ? describeStep(currentStep.tool, currentStep.parameters, 0, 1)
-      : 'working on something';
-
-    const busyResponse = `I'm currently busy — ${doing}. Want me to stop and do this instead?`;
-    logger.info(`[${sessionId}] Bot is busy, asking user: "${busyResponse}"`);
-
-    history.push({ role: 'assistant', content: busyResponse });
-    trimHistory(history);
-
-    return {
-      response: busyResponse,
-      toolsExecuted: [],
-      llmCalls: 0,
-      usedPlanning: false,
-    };
-  }
-
-  // ── Cancel any active plan for new action requests ──────────────────────
-  if (activePlan) {
-    // isChat is true here, so the user is chatting — still cancel if they say "yes/stop"
-    const lower = userMessage.toLowerCase().trim();
-    if (/^(yes|yeah|yep|stop|cancel|do it|ok do|sure)/.test(lower)) {
-      logger.info(`[${sessionId}] User confirmed cancel, cancelling active plan ${activePlan.id}`);
-      await cancelPlan(sessionId, bot);
-
-      const cancelResponse = "Alright, I stopped. What would you like me to do?";
-      history.push({ role: 'assistant', content: cancelResponse });
-      trimHistory(history);
-
-      return {
-        response: cancelResponse,
-        toolsExecuted: [],
-        llmCalls: 0,
-        usedPlanning: false,
-      };
-    }
-    // Otherwise it's just chat — let it through without cancelling
+    logger.info(`[${sessionId}] New action request while plan active — cancelling plan ${activePlan.id}`);
+    await cancelPlan(sessionId, bot);
+    // Fall through to process the new request normally
   }
 
   // ── Route: complex → planning, simple → direct loop ─────────────────────
