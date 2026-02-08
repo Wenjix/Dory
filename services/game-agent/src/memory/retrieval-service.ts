@@ -94,7 +94,7 @@ export async function getLatestSessionSummary(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a text block summarising everything Dory knows about a user.
+ * Build a text block summarising everything Dory AI knows about a user.
  * Used to inject into the game agent's system prompt.
  */
 export async function getSystemContext(userId: string): Promise<string> {

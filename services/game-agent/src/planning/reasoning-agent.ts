@@ -2,7 +2,7 @@
  * Reasoning Agent
  *
  * Creates structured plans from user requests using our LLM provider.
- * Adapted from readyplayerx, using Dory's provider-agnostic LLM client.
+ * Adapted from readyplayerx, using Dory AI's provider-agnostic LLM client.
  */
 
 import { v4 as uuidv4 } from 'uuid';

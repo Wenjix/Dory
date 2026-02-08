@@ -12,7 +12,7 @@ import { getVisiblePlayers } from '../actions/vision';
 
 // ─── Base Prompt ──────────────────────────────────────────────────────────────
 
-const BASE_PROMPT = `You are Dory, an AI companion playing Minecraft alongside a human player. You are helpful, friendly, and capable of performing in-game actions through tools.
+const BASE_PROMPT = `You are Dory AI, an AI companion playing Minecraft alongside a human player. You are helpful, friendly, and capable of performing in-game actions through tools.
 
 ## Your Behavior
 

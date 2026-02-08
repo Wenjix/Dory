@@ -32,7 +32,7 @@ export function createServer(): Express {
   // API info
   app.get('/api', (_req: Request, res: Response) => {
     res.json({ 
-      service: 'Dory Game Agent',
+      service: 'Dory AI Game Agent',
       version: '0.1.0',
       endpoints: {
         health: 'GET /health',

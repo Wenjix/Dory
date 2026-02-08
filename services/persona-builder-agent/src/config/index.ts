@@ -12,10 +12,13 @@ const envSchema = z.object({
   PORT: z.string().default('4003'),
 
   // MongoDB
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
 
-  // LLM - Groq
-  GROQ_API_KEY: z.string().min(1, 'GROQ_API_KEY is required'),
+  // LLM - OpenAI (or OpenRouter)
+  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
+  OPENAI_BASE_URL: z.string().optional(), // Optional: set to 'https://openrouter.ai/api/v1' for OpenRouter
+  // LLM - Groq (optional, kept for backward compatibility)
+  GROQ_API_KEY: z.string().optional(),
 
   // Image Generation - Gemini
   GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),

@@ -1,7 +1,7 @@
 /**
  * Conversation Summarizer Service
  *
- * Shared service for summarizing conversations using a fast LLM (Groq).
+ * Shared service for summarizing conversations using a fast LLM (OpenAI or Groq).
  * Used during agent transitions to preserve conversation context.
  */
 
@@ -23,12 +23,13 @@ export interface ConversationSummary {
 
 /**
  * Summarize a conversation history into a concise context.
- * Uses fast LLM (Groq) to create a compact summary suitable
+ * Uses fast LLM (OpenAI or Groq) to create a compact summary suitable
  * for injection into the next agent's system prompt.
  */
 export async function summarizeConversation(
   messages: ConversationMessage[],
-  groqApiKey: string
+  apiKey: string,
+  baseURL?: string
 ): Promise<ConversationSummary> {
   console.log(`[Summarizer] Processing ${messages.length} messages...`);
 
@@ -42,9 +43,13 @@ export async function summarizeConversation(
 
   const startTime = Date.now();
 
-  const groqClient = createOpenAI({
-    apiKey: groqApiKey,
-    baseURL: 'https://api.groq.com/openai/v1',
+  // Determine if using Groq (for model selection)
+  const isGroq = baseURL === 'https://api.groq.com/openai/v1';
+  
+  // Use provided baseURL (for OpenRouter support) or default to OpenAI
+  const client = createOpenAI({
+    apiKey: apiKey,
+    ...(baseURL && { baseURL }), // Use provided baseURL (OpenRouter, Groq, or custom)
   });
 
   const conversationText = messages
@@ -72,8 +77,10 @@ Provide a JSON response with this exact structure (no markdown, no extra text):
 }`;
 
   try {
+    // Use gpt-4o-mini for OpenAI, llama-3.1-8b-instant for Groq
+    const modelName = isGroq ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
     const result = await generateText({
-      model: groqClient('llama-3.1-8b-instant'),
+      model: client(modelName),
       prompt,
       temperature: 0.3,
       maxTokens: 300,

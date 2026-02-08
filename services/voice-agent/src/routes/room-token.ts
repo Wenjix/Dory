@@ -35,6 +35,13 @@ export function createRoomTokenRouter(): Router {
       const identity = req.body.identity || 'user-123';
       const { personaId, conversationSummary } = req.body;
 
+      console.log(`[RoomToken] 📥 Received request:`, {
+        roomName,
+        identity,
+        personaId: personaId || '(none)',
+        hasConversationSummary: !!conversationSummary,
+      });
+
       const apiKey = process.env.LIVEKIT_API_KEY;
       const apiSecret = process.env.LIVEKIT_API_SECRET;
       const wsUrl = process.env.LIVEKIT_URL;
@@ -64,10 +71,20 @@ export function createRoomTokenRouter(): Router {
       const dispatchMetadata: Record<string, string> = {};
       if (personaId && typeof personaId === 'string') {
         dispatchMetadata.personaId = personaId;
+        console.log(`[RoomToken] ✅ Added personaId to metadata: ${personaId}`);
+      } else {
+        console.log(`[RoomToken] ⚠️ No personaId provided or invalid type:`, typeof personaId);
       }
       if (conversationSummary && typeof conversationSummary === 'string') {
         dispatchMetadata.conversationSummary = conversationSummary;
+        console.log(`[RoomToken] ✅ Added conversationSummary to metadata (${conversationSummary.length} chars)`);
       }
+
+      const metadataJson = Object.keys(dispatchMetadata).length > 0
+        ? JSON.stringify(dispatchMetadata)
+        : '';
+      
+      console.log(`[RoomToken] 📦 Metadata JSON:`, metadataJson || '(empty)');
 
       // Explicit agent dispatch — when this participant connects,
       // LiveKit will dispatch the 'dory-voice' agent to the room.
@@ -76,12 +93,18 @@ export function createRoomTokenRouter(): Router {
         agents: [
           new RoomAgentDispatch({
             agentName: 'dory-voice',
-            metadata: Object.keys(dispatchMetadata).length > 0
-              ? JSON.stringify(dispatchMetadata)
-              : '',
+            metadata: metadataJson,
           }),
         ],
       });
+
+      // Also set metadata on the token itself as a fallback —
+      // RoomAgentDispatch.metadata → ctx.job.metadata
+      // at.metadata → ctx.room.metadata
+      // The agent reads from both sources (job takes priority).
+      if (metadataJson) {
+        at.metadata = metadataJson;
+      }
 
       const token = await at.toJwt();
 

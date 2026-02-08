@@ -23,9 +23,9 @@ import type {
 // LLM extraction prompt
 // ---------------------------------------------------------------------------
 
-const EXTRACTION_PROMPT = `You are a memory extraction agent for an AI Minecraft companion named Dory.
+const EXTRACTION_PROMPT = `You are a memory extraction agent for an AI Minecraft companion named Dory AI.
 
-Analyze the following conversation between the player and Dory. Extract any meaningful information that Dory should remember about the player for future interactions.
+Analyze the following conversation between the player and Dory AI. Extract any meaningful information that Dory AI should remember about the player for future interactions.
 
 Return a JSON object with ONLY the fields that have actual content (omit empty arrays):
 
@@ -79,7 +79,7 @@ export async function processConversationContext(
 
   // ── Build conversation text for the LLM ─────────────────────────────────
   const conversationText = conversationHistory
-    .map((m) => `${m.role === 'user' ? 'Player' : 'Dory'}: ${m.content}`)
+    .map((m) => `${m.role === 'user' ? 'Player' : 'Dory AI'}: ${m.content}`)
     .join('\n');
 
   // ── Call LLM for extraction ─────────────────────────────────────────────

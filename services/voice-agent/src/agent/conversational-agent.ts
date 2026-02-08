@@ -26,6 +26,8 @@ import {
   notifySessionEnd,
 } from '../services/context-service.js';
 import { personaClient, type PersonaInfo } from '../clients/persona-client.js';
+import { BASE_VOICE_AGENT_PROMPT, GAME_TOOL_INSTRUCTIONS } from './persona-prompt-builder.js';
+import { agentLog, agentError } from '../utils/logger.js';
 
 // ============================================================================
 // System Prompt Building
@@ -51,22 +53,48 @@ async function buildSystemPrompt(
   // If personaId is provided, fetch persona and inject personality
   if (personaId) {
     try {
-      console.log(`[Agent] Fetching persona: ${personaId}`);
+      agentLog(`Fetching persona: ${personaId}`);
       const result = await personaClient.getPersonaSystemPrompt(personaId);
 
       if (result) {
-        systemPrompt = result.prompt;
+        // CRITICAL: Assign personaInfo immediately so it's available
         personaInfo = result.personaInfo;
-        console.log(`[Agent] Injected persona: ${personaInfo.name} (voiceId: ${personaInfo.voiceId || 'NOT SET'})`);
+        
+        // Use the FULL persona prompt as-is (persona-builder already generated
+        // a complete prompt with personality, response rules, tone, etc.)
+        // Only append game-specific tool instructions that the persona prompt lacks.
+        const personaPrompt = result.prompt;
+        
+        // Combine: full persona prompt + game tool instructions
+        // The persona prompt already has personality, response rules, tone, examples
+        // We only need to add the game-specific tool definitions
+        systemPrompt = personaPrompt + '\n\n' + GAME_TOOL_INSTRUCTIONS;
+        
+        // Log to console for immediate visibility
+        console.log(`\n[Persona] ✅ Loaded: ${personaInfo.name}`);
+        console.log(`[Persona] Full persona prompt: ${personaPrompt.length} chars`);
+        console.log(`[Persona] Game instructions: ${GAME_TOOL_INSTRUCTIONS.length} chars`);
+        console.log(`[Persona] Final prompt: ${systemPrompt.length} chars`);
+        console.log(`[Persona] Prompt starts with: ${systemPrompt.substring(0, 200)}...\n`);
+        console.log(`[Persona] Contains "${personaInfo.name}": ${systemPrompt.toLowerCase().includes(personaInfo.name.toLowerCase())}`);
+        console.log(`[Persona] Contains "Dory AI": ${systemPrompt.toLowerCase().includes('dory ai')}\n`);
+        
+        agentLog(`Injected persona: ${personaInfo.name}`, {
+          voiceId: personaInfo.voiceId || 'NOT SET',
+          personaPromptLength: personaPrompt.length,
+          gameInstructionsLength: GAME_TOOL_INSTRUCTIONS.length,
+          finalPromptLength: systemPrompt.length,
+          containsPersonaName: systemPrompt.toLowerCase().includes(personaInfo.name.toLowerCase()),
+        });
       } else {
-        console.warn(`[Agent] Persona ${personaId} not found, using default prompt`);
+        agentLog(`Persona ${personaId} not found, using default prompt`);
       }
     } catch (error) {
-      console.error(`[Agent] Failed to fetch persona ${personaId}:`, error);
-      console.warn(`[Agent] Falling back to default prompt`);
+      agentError(`Failed to fetch persona ${personaId}`, error);
+      agentLog('Falling back to default prompt');
     }
   } else {
-    console.log(`[Agent] No personaId provided, using default prompt`);
+    agentLog('No personaId provided, using default prompt');
   }
 
   // Inject conversation context if provided (from previous agent)
@@ -85,7 +113,7 @@ ${conversationSummary}
 
 Pick up where they left off smoothly.`;
 
-    console.log(`[Agent] Injected conversation context (${conversationSummary.length} chars)`);
+    agentLog(`Injected conversation context (${conversationSummary.length} chars)`);
   }
 
   // Try to fetch memory context for additional personalization
@@ -105,12 +133,12 @@ Rules:
 - Keep it casual — like a friend who just happens to remember, not a database readout.
 
 ${memoryContext}`;
-      console.log(`[Agent] Enriched prompt with memory context (${memoryContext.length} chars)`);
+      agentLog(`Enriched prompt with memory context (${memoryContext.length} chars)`);
     } else {
-      console.log('[Agent] No memory context available (new user or game agent not running)');
+      agentLog('No memory context available (new user or game agent not running)');
     }
   } catch {
-    console.log('[Agent] Could not fetch memory context');
+    agentLog('Could not fetch memory context');
   }
 
   return { prompt: systemPrompt, personaInfo };
@@ -314,31 +342,65 @@ export default defineAgent({
   },
 
   entry: async (ctx: JobContext) => {
+    // Log immediately at entry point (before any async operations)
+    console.log(`\n[Agent] 🚀 ENTRY POINT CALLED - Agent starting...`);
+    console.log(`[Agent] Room: ${ctx.room.name || '(unnamed)'}, Job ID: ${ctx.job.id}`);
+    
     const sessionId = ctx.room.name || ctx.job.id;
 
     // Connect to the room FIRST (before anything else)
+    console.log(`[Agent] 🔌 Connecting to room...`);
     await ctx.connect();
+    console.log(`[Agent] ✅ Connected to room`);
 
     // ── Parse metadata (personaId, conversationSummary) ──────────────────
+    // Metadata can arrive via:
+    //   ctx.job.metadata  — from RoomAgentDispatch.metadata (explicit dispatch)
+    //   ctx.room.metadata — from at.metadata (room-level, fallback)
     let personaId: string | undefined;
     let conversationSummary: string | undefined;
+
+    // Log raw metadata sources (agentLog writes to agent.log file since
+    // child process stdout is not visible in the parent terminal)
+    // Also log to console for immediate visibility
+    console.log(`[Agent] 📥 Raw metadata received:`);
+    console.log(`[Agent]   ctx.job.metadata:`, ctx.job.metadata || '(empty)');
+    console.log(`[Agent]   ctx.room.metadata:`, ctx.room.metadata || '(empty)');
+    agentLog('Raw ctx.job.metadata', { value: ctx.job.metadata || '(empty)' });
+    agentLog('Raw ctx.room.metadata', { value: ctx.room.metadata || '(empty)' });
+
     try {
       const jobMeta = JSON.parse(ctx.job.metadata || '{}');
       const roomMeta = JSON.parse(ctx.room.metadata || '{}');
       const meta = { ...roomMeta, ...jobMeta }; // job metadata takes priority
 
+      console.log(`[Agent] 📦 Parsed metadata:`, {
+        keys: Object.keys(meta),
+        personaId: meta.personaId || '(none)',
+        hasConversationSummary: !!meta.conversationSummary,
+      });
+      agentLog('Parsed metadata', { keys: Object.keys(meta), meta });
+
       personaId = meta.personaId;
       conversationSummary = meta.conversationSummary;
 
       if (personaId) {
-        console.log(`[Agent] Persona requested: ${personaId}`);
+        console.log(`[Agent] ✅ Persona requested: ${personaId}`);
+        agentLog(`Persona requested: ${personaId}`);
+      } else {
+        console.log(`[Agent] ⚠️ No personaId found in metadata`);
       }
       if (conversationSummary) {
-        console.log(`[Agent] Conversation context received (${conversationSummary.length} chars)`);
+        console.log(`[Agent] ✅ Conversation context received (${conversationSummary.length} chars)`);
+        agentLog(`Conversation context received (${conversationSummary.length} chars)`);
       }
-    } catch {}
+    } catch (err) {
+      console.error(`[Agent] ❌ Failed to parse metadata:`, err);
+      agentError('Failed to parse metadata', err);
+    }
 
-    console.log(`🎮 Agent session started: ${sessionId} (persona: ${personaId || 'default'})`);
+    console.log(`[Agent] 🚀 Session started: ${sessionId} (persona: ${personaId || 'default'})`);
+    agentLog(`Session started: ${sessionId} (persona: ${personaId || 'default'})`);
 
     // ── Duplicate agent guard ─────────────────────────────────────────────
     const participants = Array.from(ctx.room.remoteParticipants.values());
@@ -359,12 +421,47 @@ export default defineAgent({
       apiKey: process.env.DEEPGRAM_API_KEY,
     });
 
-    // ── LLM (OpenAI-compatible, must support tool/function calling) ───────
-    const llmApiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
-    const llmBaseURL = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
-    const llmModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    // ── LLM (OpenAI GPT models via OpenAI or OpenRouter - required for proper instruction following) ───────
+    // Voice agent MUST use OpenAI GPT models (not Groq/LLama) for reliable
+    // persona personality adherence and tool calling.
+    // Supports:
+    //   - Direct OpenAI: https://api.openai.com/v1 (requires OPENAI_API_KEY)
+    //   - OpenRouter: https://openrouter.ai/api/v1 (requires OPENROUTER_API_KEY, supports GPT models)
+    const llmApiKey = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+    
+    // Default to OpenAI, but allow OpenRouter (which also provides GPT models)
+    const llmBaseURL = process.env.LLM_BASE_URL || 
+      (process.env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+    
+    // Use gpt-4o for better instruction following (persona personality adherence)
+    // gpt-4o-mini is faster but may not follow complex personality instructions as well
+    // For OpenRouter, use model names like "openai/gpt-4o" or "openai/gpt-4o-mini"
+    const llmModel = process.env.LLM_MODEL || 
+      (llmBaseURL.includes('openrouter.ai') ? 'openai/gpt-4o' : 'gpt-4o');
+    
+    // Validate we're using OpenAI-compatible API (OpenAI or OpenRouter with GPT models)
+    if (llmBaseURL.includes('groq.com') || llmBaseURL.includes('api.groq.com')) {
+      console.error(`[Agent] ❌ ERROR: Voice agent requires OpenAI GPT models, not Groq!`);
+      console.error(`[Agent] Current baseURL: ${llmBaseURL}`);
+      console.error(`[Agent] Please use OpenAI (api.openai.com) or OpenRouter (openrouter.ai) with GPT models`);
+      throw new Error('Voice agent must use OpenAI GPT models, not Groq');
+    }
+    
+    // Validate model is a GPT model (not LLama/Groq models)
+    if (llmModel.includes('llama') || llmModel.includes('groq') || llmModel.includes('qwen')) {
+      console.error(`[Agent] ❌ ERROR: Voice agent requires GPT models, not ${llmModel}`);
+      console.error(`[Agent] Please use a GPT model like: gpt-4o, gpt-4o-mini, gpt-4-turbo, or openai/gpt-4o (for OpenRouter)`);
+      throw new Error(`Voice agent must use GPT models, not ${llmModel}`);
+    }
+    
+    if (!llmApiKey) {
+      console.error(`[Agent] ❌ ERROR: LLM API key required`);
+      console.error(`[Agent] Set one of: OPENROUTER_API_KEY, LLM_API_KEY, or OPENAI_API_KEY`);
+      throw new Error('LLM API key required');
+    }
 
-    console.log(`[Agent] LLM: ${llmModel} @ ${llmBaseURL}`);
+    const provider = llmBaseURL.includes('openrouter.ai') ? 'OpenRouter' : 'OpenAI';
+    console.log(`[Agent] LLM: ${llmModel} @ ${llmBaseURL} (${provider} - GPT model)`);
 
     const llm = new openai.LLM({
       apiKey: llmApiKey,
@@ -381,18 +478,39 @@ export default defineAgent({
 
     // ── Build system prompt with persona + memory enrichment ─────────────
     const userId = 'user-123';
-    console.log(`[Agent] Building system prompt (personaId: ${personaId || 'none'})`);
+    agentLog(`Building system prompt (personaId: ${personaId || 'none'})`);
     const { prompt: systemPrompt, personaInfo } = await buildSystemPrompt(
       userId, personaId, conversationSummary
     );
+    // Log to console for immediate visibility
+    console.log(`[SystemPrompt] Final result:`, {
+      personaLoaded: personaInfo ? personaInfo.name : 'NONE (default Dory AI)',
+      promptLength: systemPrompt.length,
+      first200Chars: systemPrompt.substring(0, 200),
+      containsPersonaName: personaInfo ? systemPrompt.toLowerCase().includes(personaInfo.name.toLowerCase()) : false,
+      containsDoryAI: systemPrompt.toLowerCase().includes('dory ai'),
+    });
+    
+    agentLog('System prompt result', {
+      personaLoaded: personaInfo ? personaInfo.name : 'NONE (default Dory AI)',
+      voiceId: personaInfo?.voiceId || 'NONE (default voice)',
+      promptLength: systemPrompt.length,
+      promptPreview: systemPrompt.substring(0, 300),
+      promptStartsWith: systemPrompt.substring(0, 100),
+      containsPersonaName: personaInfo ? systemPrompt.toLowerCase().includes(personaInfo.name.toLowerCase()) : false,
+      containsDoryAI: systemPrompt.toLowerCase().includes('dory ai'),
+    });
 
     // ── Apply persona voiceId if available ────────────────────────────────
     if (personaInfo?.voiceId) {
-      console.log(`[Agent] Applying persona voiceId: ${personaInfo.voiceId}`);
+      console.log(`[Voice] 🎤 Applying persona voiceId: ${personaInfo.voiceId}`);
+      agentLog(`Applying persona voiceId: ${personaInfo.voiceId}`);
       tts.updateOptions({ voiceId: personaInfo.voiceId });
-      console.log(`[Agent] Voice updated to: ${personaInfo.voiceId}`);
+      console.log(`[Voice] ✅ Voice updated successfully`);
+      agentLog(`Voice updated to: ${personaInfo.voiceId}`);
     } else if (personaId) {
-      console.log(`[Agent] No voiceId available for persona, using default voice`);
+      console.log(`[Voice] ⚠️  No voiceId available for persona, using default voice`);
+      agentLog('No voiceId available for persona, using default voice');
     }
 
     // ── Agent Session (voice pipeline) ────────────────────────────────────
@@ -427,7 +545,7 @@ export default defineAgent({
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (event) => {
       const item = event.item;
       if (item.role === 'assistant' && item.textContent) {
-        console.log(`🤖 Dory: "${item.textContent}"`);
+        console.log(`🤖 Dory AI: "${item.textContent}"`);
       }
     });
 

@@ -9,7 +9,7 @@
  *   Daily    — aggregates today's session summaries
  *   Profile  — master user profile, updated on session end
  *
- * Adapted from readyplayerx — uses Dory's provider-agnostic LLM client
+ * Adapted from readyplayerx — uses Dory AI's provider-agnostic LLM client
  * instead of direct Anthropic SDK. No embeddings.
  */
 
@@ -23,7 +23,7 @@ import { ObjectId } from 'mongodb';
 // LLM Prompts
 // ═══════════════════════════════════════════════════════════════════════════
 
-const SESSION_SUMMARY_PROMPT = `You are a Memory Summary Agent for Dory, an AI Minecraft gaming companion.
+const SESSION_SUMMARY_PROMPT = `You are a Memory Summary Agent for Dory AI, an AI Minecraft gaming companion.
 Your job is to produce a rich, structured session summary from gameplay memories.
 
 You will receive:
@@ -32,7 +32,7 @@ You will receive:
 
 Return ONLY valid JSON (no markdown fences, no explanation):
 {
-  "narrative": "A 3-5 sentence third-person narrative capturing the full arc of the session — what the player asked Dory to do, what happened, any setbacks, and the outcome. Be specific: mention block types, item names, structure types, player names.",
+  "narrative": "A 3-5 sentence third-person narrative capturing the full arc of the session — what the player asked Dory AI to do, what happened, any setbacks, and the outcome. Be specific: mention block types, item names, structure types, player names.",
   "keyHighlights": [
     "List 3-7 specific things that happened, e.g. 'Collected 20 oak logs near spawn', 'Built a cobblestone wall', 'Died to a creeper at night'"
   ],
@@ -52,8 +52,8 @@ Guidelines:
 - Achievements should only include genuinely notable things (not every single action).
 - If the session was short or uneventful, keep the output brief — don't pad it.`;
 
-const USER_PROFILE_PROMPT = `You are a Memory Profile Agent for Dory, an AI Minecraft gaming companion.
-Your job is to build a comprehensive, evolving player profile that Dory uses to personalize every interaction.
+const USER_PROFILE_PROMPT = `You are a Memory Profile Agent for Dory AI, an AI Minecraft gaming companion.
+Your job is to build a comprehensive, evolving player profile that Dory AI uses to personalize every interaction.
 
 You will receive:
 1. Current user profile (if one exists — update and refine it, don't start from scratch)
@@ -62,10 +62,10 @@ You will receive:
 
 Return ONLY valid JSON (no markdown fences, no explanation):
 {
-  "narrative": "A 4-6 sentence portrait of who this player is. Describe their personality, what they enjoy doing in Minecraft, how they interact with Dory, their skill level, and what motivates them. Write it as if briefing a new companion about this player. Be warm but factual.",
+  "narrative": "A 4-6 sentence portrait of who this player is. Describe their personality, what they enjoy doing in Minecraft, how they interact with Dory AI, their skill level, and what motivates them. Write it as if briefing a new companion about this player. Be warm but factual.",
   "personality": {
     "traits": ["3-6 personality traits like 'creative', 'patient', 'adventurous', 'methodical', 'social', 'competitive'"],
-    "communicationStyle": "How they talk to Dory: casual, enthusiastic, brief, detailed, humorous, demanding, etc.",
+    "communicationStyle": "How they talk to Dory AI: casual, enthusiastic, brief, detailed, humorous, demanding, etc.",
     "playStyle": "Their Minecraft play style: creative builder, survival specialist, explorer, redstone engineer, farmer, combat-focused, etc."
   },
   "preferences": {
@@ -79,7 +79,7 @@ Return ONLY valid JSON (no markdown fences, no explanation):
     "completedGoals": ["Goals they've already achieved"],
     "aspirations": ["Longer-term ambitions mentioned even casually"]
   },
-  "relationship": "A 1-2 sentence guide for how Dory should interact with this specific player. Consider their personality, communication style, and preferences. E.g. 'This player likes quick, enthusiastic responses and appreciates when Dory takes initiative. Keep suggestions practical and action-oriented.'"
+  "relationship": "A 1-2 sentence guide for how Dory AI should interact with this specific player. Consider their personality, communication style, and preferences. E.g. 'This player likes quick, enthusiastic responses and appreciates when Dory AI takes initiative. Keep suggestions practical and action-oriented.'"
 }
 
 Guidelines:
@@ -87,9 +87,9 @@ Guidelines:
 - If the current profile exists, REFINE it. Update traits, add new preferences, mark completed goals. Don't lose old information unless contradicted.
 - Be specific to Minecraft: mention block types, biomes, activities, not generic traits.
 - If there's limited data, say so honestly rather than inventing traits.
-- The "relationship" field is critical — it directly shapes how Dory talks to this player.`;
+- The "relationship" field is critical — it directly shapes how Dory AI talks to this player.`;
 
-const DAILY_SUMMARY_PROMPT = `You are a Memory Summary Agent for Dory, an AI Minecraft gaming companion.
+const DAILY_SUMMARY_PROMPT = `You are a Memory Summary Agent for Dory AI, an AI Minecraft gaming companion.
 Your job is to create a daily summary that captures the full picture of what happened today.
 
 You will receive:

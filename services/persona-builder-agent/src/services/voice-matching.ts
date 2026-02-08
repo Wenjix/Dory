@@ -2,7 +2,7 @@
  * Voice Matching Service
  *
  * Matches personas to ElevenLabs voices using LLM-based selection.
- * Fetches available voices from ElevenLabs API and uses Groq to select
+ * Fetches available voices from ElevenLabs API and uses OpenAI to select
  * the best match based on persona traits.
  */
 
@@ -11,18 +11,18 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { getConfig } from '../config/index.js';
 import type { PersonaData } from '../types/persona.js';
 
-// Lazy-initialized Groq client
-let groqClient: ReturnType<typeof createOpenAI> | null = null;
+// Lazy-initialized OpenAI client
+let openaiClient: ReturnType<typeof createOpenAI> | null = null;
 
-function getGroqClient() {
-  if (!groqClient) {
+function getOpenAIClient() {
+  if (!openaiClient) {
     const config = getConfig();
-    groqClient = createOpenAI({
-      apiKey: config.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1',
+    openaiClient = createOpenAI({
+      apiKey: config.OPENAI_API_KEY,
+      ...(config.OPENAI_BASE_URL && { baseURL: config.OPENAI_BASE_URL }),
     });
   }
-  return groqClient;
+  return openaiClient;
 }
 
 /**
@@ -110,20 +110,21 @@ export async function fetchElevenLabsVoices(): Promise<ElevenLabsVoice[]> {
 
 /**
  * Build a compact representation of voices for LLM matching
+ * Format emphasizes the voice_id as the primary identifier
  */
 function buildVoiceCatalog(voices: ElevenLabsVoice[]): string {
   return voices
-    .map((v) => {
+    .map((v, index) => {
       const labels = v.labels || {};
       const parts: string[] = [
-        `ID: ${v.voice_id}`,
-        `Name: ${v.name}`,
+        `[${index + 1}] voice_id: "${v.voice_id}"`,
+        `name: "${v.name}"`,
       ];
-      if (labels.gender) parts.push(`Gender: ${labels.gender}`);
-      if (labels.age) parts.push(`Age: ${labels.age}`);
-      if (labels.accent) parts.push(`Accent: ${labels.accent}`);
-      if (labels.use_case) parts.push(`Use case: ${labels.use_case}`);
-      if (v.description) parts.push(`Description: ${v.description}`);
+      if (labels.gender) parts.push(`gender: ${labels.gender}`);
+      if (labels.age) parts.push(`age: ${labels.age}`);
+      if (labels.accent) parts.push(`accent: ${labels.accent}`);
+      if (labels.use_case) parts.push(`use_case: ${labels.use_case}`);
+      if (v.description) parts.push(`description: ${v.description}`);
       return parts.join(', ');
     })
     .join('\n');
@@ -177,10 +178,14 @@ export async function matchVoiceToPersona(
   try {
     console.log(`[VoiceMatching] Matching voice for persona: ${persona.identity.name}`);
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: `You are an expert at matching character personas to voice actors.
 Analyze the persona traits and select the single best-matching voice from the catalog.
-Return ONLY valid JSON with voice_id, voice_name, and a brief reason.`,
+
+CRITICAL: You MUST return the exact voice_id from the catalog (the value after "voice_id:"). 
+Do NOT return the voice name in the voice_id field. The voice_id is a unique identifier string.
+
+Return ONLY valid JSON with voice_id (exact ID from catalog), voice_name, and a brief reason.`,
       prompt: `Persona to match:
 ${JSON.stringify(personaSummary, null, 2)}
 
@@ -194,14 +199,17 @@ Select the single best-matching voice. Consider:
 - Voice energy level (calm, moderate, energetic)
 - Accent preferences
 
+IMPORTANT: Copy the exact voice_id value from the catalog above (the quoted string after "voice_id:").
+Do NOT use the voice name as the voice_id.
+
 Return JSON in this exact format:
 {
-  "voice_id": "abc123...",
+  "voice_id": "CwhRBWXzGAHq8TQ4Fs17",
   "voice_name": "Voice Name",
   "reason": "Brief explanation of why this voice matches"
 }`,
       maxTokens: 500,
-      temperature: 0.7,
+      temperature: 0.3, // Lower temperature for more deterministic output
     });
 
     // Parse LLM response
@@ -217,10 +225,30 @@ Return JSON in this exact format:
     }
 
     // Verify the voice_id exists in our catalog
-    const selectedVoice = voices.find((v) => v.voice_id === match.voice_id);
+    let selectedVoice = voices.find((v) => v.voice_id === match.voice_id);
+    
+    // Fallback: if voice_id doesn't match, try matching by name (LLM may have returned name instead of ID)
+    if (!selectedVoice && match.voice_id) {
+      console.log(`[VoiceMatching] ⚠️ voice_id "${match.voice_id}" not found, trying name-based match...`);
+      selectedVoice = voices.find((v) => 
+        v.name.toLowerCase().trim() === match.voice_id.toLowerCase().trim() ||
+        v.name.toLowerCase().includes(match.voice_id.toLowerCase()) ||
+        match.voice_id.toLowerCase().includes(v.name.toLowerCase())
+      );
+      
+      if (selectedVoice) {
+        console.log(`[VoiceMatching] ✅ Found voice by name match: ${selectedVoice.name} (${selectedVoice.voice_id})`);
+        // Update match to use the correct ID
+        match.voice_id = selectedVoice.voice_id;
+        match.voice_name = selectedVoice.name;
+      }
+    }
+    
     if (!selectedVoice) {
       console.warn(`[VoiceMatching] ⚠️ Selected voice_id "${match.voice_id}" not found in catalog`);
-      console.warn(`[VoiceMatching] LLM may have hallucinated a voice ID. Available IDs: ${voices.slice(0, 5).map(v => v.voice_id).join(', ')}...`);
+      console.warn(`[VoiceMatching] LLM returned: ${JSON.stringify(match)}`);
+      console.warn(`[VoiceMatching] Available IDs: ${voices.slice(0, 5).map(v => v.voice_id).join(', ')}...`);
+      console.warn(`[VoiceMatching] Available names: ${voices.slice(0, 5).map(v => v.name).join(', ')}...`);
       return null;
     }
 

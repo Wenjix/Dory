@@ -9,6 +9,7 @@
     "dev:voice": "turbo run dev --filter=@dory/voice-agent",
     "dev:gatekeeper": "turbo run dev --filter=@dory/gatekeeper-agent",
     "dev:persona": "turbo run dev --filter=@dory/persona-builder-agent",
+    "dev:web": "turbo run dev --filter=@dory/web",
     "build": "turbo run build",
     "build:shared": "turbo run build --filter=@dory/shared",
     "typecheck": "turbo run typecheck",

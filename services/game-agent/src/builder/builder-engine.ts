@@ -3,7 +3,7 @@
  *
  * Flow: description → build prompt → LLM call → extract JS → sandbox execute → place blocks
  *
- * Ported from MineGenAI's service.py and core.py, adapted for Dory's architecture.
+ * Ported from MineGenAI's service.py and core.py, adapted for Dory AI's architecture.
  * Instead of generating .schem files, we place blocks directly in the world
  * via /setblock commands for a live progressive building experience.
  */
@@ -287,8 +287,8 @@ export async function generateAndBuild(
 
   // ── 5. Call LLM ─────────────────────────────────────────────────────────
   // Note: we intentionally do NOT emit events during the design phase.
-  // The voice agent prompt tells Dory to give a heads-up before sending the command,
-  // so the player already knows to wait. Emitting here causes Dory to narrate
+  // The voice agent prompt tells Dory AI to give a heads-up before sending the command,
+  // so the player already knows to wait. Emitting here causes Dory AI to narrate
   // prematurely ("blocks are going up!") before anything is actually placed.
 
   let llmResponse: string;

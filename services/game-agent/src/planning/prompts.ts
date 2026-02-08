@@ -2,7 +2,7 @@
  * Planning Prompts
  *
  * System prompt pieces for the planning LLM.
- * Adapted from readyplayerx, using Dory's tool names.
+ * Adapted from readyplayerx, using Dory AI's tool names.
  */
 
 import { ALL_TOOLS } from '../tools/registry';
@@ -10,7 +10,7 @@ import { ALL_TOOLS } from '../tools/registry';
 // ─── Planning Agent Prompt ────────────────────────────────────────────────────
 
 export function getPlanningAgentPrompt(): string {
-  return `You are a planning agent for a Minecraft bot called Dory. Your job is to break down user requests into a sequential plan of tool calls.
+  return `You are a planning agent for a Minecraft bot called Dory AI. Your job is to break down user requests into a sequential plan of tool calls.
 
 OUTPUT FORMAT: You MUST respond with ONLY valid JSON in this exact format:
 {

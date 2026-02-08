@@ -54,7 +54,8 @@ export class PersonaClient {
       });
 
       if (!response.ok) {
-        console.warn(`[PersonaClient] Conversational prompt not available (${response.status})`);
+        const errorBody = await response.text().catch(() => '(could not read body)');
+        console.warn(`[PersonaClient] ❌ Strategy 1 failed (${response.status}): ${errorBody}`);
         return null;
       }
 
@@ -62,8 +63,12 @@ export class PersonaClient {
       const duration = Date.now() - startTime;
       const voiceId = data.voiceId || null;
 
-      console.log(`[PersonaClient] Raw API response voiceId field:`, data.voiceId);
-      console.log(`[PersonaClient] Extracted voiceId: ${voiceId}`);
+      console.log(`[PersonaClient] ✅ Strategy 1 response from persona-builder (${duration}ms):`);
+      console.log(`[PersonaClient]   personaId: ${data.personaId}`);
+      console.log(`[PersonaClient]   personaName: ${data.personaName}`);
+      console.log(`[PersonaClient]   voiceId: ${data.voiceId}`);
+      console.log(`[PersonaClient]   prompt length: ${data.prompt?.length || 0} chars`);
+      console.log(`[PersonaClient]   prompt preview: ${data.prompt?.substring(0, 200)}...`);
 
       if (voiceId) {
         console.log(`[PersonaClient] Fetched conversational prompt for "${data.personaName}" with voiceId: ${voiceId} in ${duration}ms`);
@@ -97,13 +102,21 @@ export class PersonaClient {
       });
 
       if (!response.ok) {
-        console.warn(`[PersonaClient] Public persona not found (${response.status})`);
+        const errorBody = await response.text().catch(() => '(could not read body)');
+        console.warn(`[PersonaClient] ❌ Strategy 2 failed (${response.status}): ${errorBody}`);
         return null;
       }
 
       const data = await response.json() as PublicPersonaResponse;
       const duration = Date.now() - startTime;
-      console.log(`[PersonaClient] Fetched persona "${data.persona.identity?.name}" in ${duration}ms`);
+      console.log(`[PersonaClient] ✅ Strategy 2 response from persona-builder (${duration}ms):`);
+      console.log(`[PersonaClient]   persona name: ${data.persona.identity?.name}`);
+      console.log(`[PersonaClient]   persona id: ${data.persona.id}`);
+      console.log(`[PersonaClient]   has personality: ${!!data.persona.personality}`);
+      console.log(`[PersonaClient]   has communication: ${!!data.persona.communication}`);
+      console.log(`[PersonaClient]   has gaming: ${!!data.persona.gaming}`);
+      console.log(`[PersonaClient]   has voice: ${!!data.persona.voice}`);
+      console.log(`[PersonaClient]   voice data: ${JSON.stringify(data.persona.voice)}`);
 
       return data.persona;
     } catch (error) {

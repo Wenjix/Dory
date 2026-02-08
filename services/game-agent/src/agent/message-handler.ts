@@ -351,7 +351,7 @@ async function handleWithPlanning(
 /**
  * Build a natural-sounding narration of the plan for the voice agent.
  * Uses the plan's reasoning + step descriptions to create something
- * Dory can say out loud, e.g.:
+ * Dory AI can say out loud, e.g.:
  *   "Alright! First I'll collect some oak logs, then craft them into planks."
  */
 function buildPlanNarration(plan: { reasoning?: string; steps: Array<{ tool: string; parameters: Record<string, any>; expectedOutcome?: string }> }): string {

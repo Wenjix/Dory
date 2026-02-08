@@ -1,7 +1,7 @@
 /**
  * Persona Builder Agent
  *
- * Core agent logic using Vercel AI SDK with Groq LLM.
+ * Core agent logic using Vercel AI SDK with OpenAI LLM.
  * Handles persona creation flow via tool calling.
  */
 
@@ -38,18 +38,18 @@ const SUMMARIZE_THRESHOLD = 10;  // Trigger summarization when messages exceed t
 const MESSAGES_TO_SUMMARIZE = 6; // Number of oldest messages to summarize
 const MESSAGES_TO_KEEP = 6;      // Number of recent messages to keep verbatim
 
-// Lazy-initialized Groq client
-let groqClient: ReturnType<typeof createOpenAI> | null = null;
+// Lazy-initialized OpenAI client
+let openaiClient: ReturnType<typeof createOpenAI> | null = null;
 
-function getGroqClient() {
-  if (!groqClient) {
+function getOpenAIClient() {
+  if (!openaiClient) {
     const config = getConfig();
-    groqClient = createOpenAI({
-      apiKey: config.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1',
+    openaiClient = createOpenAI({
+      apiKey: config.OPENAI_API_KEY,
+      ...(config.OPENAI_BASE_URL && { baseURL: config.OPENAI_BASE_URL }),
     });
   }
-  return groqClient;
+  return openaiClient;
 }
 
 /**
@@ -68,7 +68,7 @@ async function summarizeMessages(
 
   try {
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'), // Fast model for summarization
+      model: getOpenAIClient()('gpt-4o-mini'), // Fast model for summarization
       system: 'You are a helpful assistant that summarizes conversations concisely.',
       prompt: `Summarize this conversation in 2-3 bullet points. Focus on what the user wants for their persona (name, personality, appearance, gaming style). Be brief and factual.
 
@@ -138,7 +138,7 @@ async function extractSuggestions(text: string): Promise<{ message: string; sugg
 
   try {
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: `You extract the main message and choice options from text.
 Return ONLY valid JSON, nothing else.
 Format: { "message": "the question or statement", "suggestions": ["option1", "option2", ...] }
@@ -561,7 +561,7 @@ export async function handleUserMessage(
 
     // Stream response from LLM (simple pattern like gatekeeper-agent)
     const result = await streamText({
-      model: getGroqClient()('llama-3.3-70b-versatile'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: systemPrompt,
       messages,
       tools,
@@ -849,7 +849,7 @@ This is the ONLY action you should take. No text, no questions, just the tool ca
 
         try {
           const retryResult = await streamText({
-            model: getGroqClient()('llama-3.3-70b-versatile'),
+            model: getOpenAIClient()('gpt-4o-mini'),
             system: retrySystemPrompt,
             messages: messages.slice(-3), // Use only last 3 messages for retry
             tools,

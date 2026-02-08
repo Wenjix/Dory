@@ -18,6 +18,7 @@ import {
   getMessages,
   setCurrentMode,
   setPendingPersonas,
+  getPendingPersonas,
   setSelectedPersonaId,
   setPersonasFetchedThisTurn,
   werePersonasFetchedThisTurn,
@@ -94,7 +95,7 @@ export function createGatekeeperTools(context: ToolContext) {
             return {
               success: true,
               personas: [],
-              message: 'No personas available yet. Suggest the user create one instead.'
+              message: 'The vault is empty - no personas exist yet. Inform the user that the vault is empty and encourage them to create the first persona. If they agree or show interest, call changeMode with PERSONA_BUILDER to let them create one.'
             };
           }
 
@@ -159,6 +160,9 @@ export function createGatekeeperTools(context: ToolContext) {
 
         const session = getSession(context.sessionId);
 
+        // Resolved persona ID (for GAMER_AGENT mode, may be resolved from name to ID)
+        let resolvedPersonaId: string | undefined = personaId;
+
         // Validate requirements for each mode
         if (mode === 'GAMER_AGENT') {
           // Block if personas were just fetched this turn - user hasn't had a chance to choose
@@ -178,8 +182,43 @@ export function createGatekeeperTools(context: ToolContext) {
             };
           }
 
-          // Store selected persona
-          setSelectedPersonaId(context.sessionId, personaId);
+          // Resolve persona name to ID if needed
+          // MongoDB ObjectId is 24-character hexadecimal string
+          const objectIdPattern = /^[a-fA-F0-9]{24}$/;
+          resolvedPersonaId = personaId;
+
+          // If personaId doesn't look like a valid ObjectId, try to resolve it from pending personas
+          if (!objectIdPattern.test(personaId)) {
+            console.log(`[Tool:changeMode] personaId "${personaId}" doesn't match ObjectId format, attempting name resolution...`);
+            const pendingPersonas = getPendingPersonas(context.sessionId);
+            
+            if (pendingPersonas && pendingPersonas.length > 0) {
+              // Try to find by exact name match (case-insensitive)
+              const matchedPersona = pendingPersonas.find(
+                p => p.name.toLowerCase() === personaId.toLowerCase()
+              );
+              
+              if (matchedPersona) {
+                resolvedPersonaId = matchedPersona.id;
+                console.log(`[Tool:changeMode] ✅ Resolved persona name "${personaId}" to ID: ${resolvedPersonaId}`);
+              } else {
+                console.warn(`[Tool:changeMode] ⚠️ Could not resolve persona name "${personaId}" from pending personas list`);
+                return {
+                  success: false,
+                  error: `Persona "${personaId}" not found in the available personas. Please select a valid persona from the list.`,
+                };
+              }
+            } else {
+              console.warn(`[Tool:changeMode] ⚠️ No pending personas available to resolve name "${personaId}"`);
+              return {
+                success: false,
+                error: `Invalid persona ID format: "${personaId}". Expected a valid MongoDB ObjectId or a persona name from the available list.`,
+              };
+            }
+          }
+
+          // Store selected persona (using resolved ID)
+          setSelectedPersonaId(context.sessionId, resolvedPersonaId);
         }
 
         // Summarize conversation before mode change (for context preservation)
@@ -195,7 +234,7 @@ export function createGatekeeperTools(context: ToolContext) {
               10
             );
 
-            const summary = await summarizeConversation(recentMsgs, config.GROQ_API_KEY);
+            const summary = await summarizeConversation(recentMsgs, config.GROQ_API_KEY, 'https://api.groq.com/openai/v1');
             conversationSummary = formatSummaryForPrompt(summary);
 
             console.log(`[Tool:changeMode] Summary: ${conversationSummary.substring(0, 80)}...`);
@@ -223,9 +262,9 @@ export function createGatekeeperTools(context: ToolContext) {
           timestamp: new Date().toISOString(),
         };
 
-        // Include personaId for GAMER_AGENT mode
-        if (mode === 'GAMER_AGENT' && personaId) {
-          message.personaId = personaId;
+        // Include personaId for GAMER_AGENT mode (use resolved ID)
+        if (mode === 'GAMER_AGENT' && resolvedPersonaId) {
+          message.personaId = resolvedPersonaId;
         }
 
         // Include initial prompt for persona builder
@@ -253,7 +292,7 @@ export function createGatekeeperTools(context: ToolContext) {
         const modeMessages: Record<AppMode, string> = {
           'GATEKEEPER': 'Back to main menu.',
           'PERSONA_BUILDER': 'Opening persona builder.',
-          'GAMER_AGENT': `Starting game with persona ${personaId}.`,
+          'GAMER_AGENT': `Starting game with persona ${resolvedPersonaId || personaId}.`,
         };
 
         return {

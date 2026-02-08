@@ -88,8 +88,9 @@ If persona is not saved yet, tell the user to save first using savePersona tool.
           };
         }
 
-        // Determine persona ID - ONLY from saved persona, never generate
-        const targetPersonaId = explicitPersonaId || editingId;
+        // Determine persona ID - ALWAYS prefer editingId (from database) over LLM parameter
+        // editingId is guaranteed to be a valid ObjectId from savePersona
+        const targetPersonaId = editingId || explicitPersonaId;
 
         // Final validation - ensure we have a valid personaId
         if (!targetPersonaId || targetPersonaId.trim() === '') {
@@ -97,6 +98,16 @@ If persona is not saved yet, tell the user to save first using savePersona tool.
           return {
             success: false,
             error: 'Invalid persona ID. Cannot transition to gaming mode. Please save your persona first.',
+          };
+        }
+
+        // Validate ObjectId format (24-character hexadecimal string)
+        const objectIdPattern = /^[a-fA-F0-9]{24}$/;
+        if (!objectIdPattern.test(targetPersonaId)) {
+          console.error(`[Tool:playWithPersona] ⛔ Invalid ObjectId format: "${targetPersonaId}"`);
+          return {
+            success: false,
+            error: `Invalid persona ID format. Received "${targetPersonaId}" but expected a valid MongoDB ObjectId. Please save your persona first to get a valid ID.`,
           };
         }
 
@@ -113,7 +124,7 @@ If persona is not saved yet, tell the user to save first using savePersona tool.
               10
             );
 
-            const summary = await summarizeConversation(recentMsgs, config.GROQ_API_KEY);
+            const summary = await summarizeConversation(recentMsgs, config.OPENAI_API_KEY, config.OPENAI_BASE_URL);
             conversationSummary = formatSummaryForPrompt(summary);
 
             console.log(`[Tool:playWithPersona] ✅ Summary: ${conversationSummary.substring(0, 80)}...`);
@@ -126,7 +137,8 @@ If persona is not saved yet, tell the user to save first using savePersona tool.
         }
 
         // Final safety check before sending mode_change - never send without valid personaId
-        if (!targetPersonaId || targetPersonaId.trim() === '') {
+        // (This should never trigger since we validate above, but keeping as safety net)
+        if (!targetPersonaId || targetPersonaId.trim() === '' || !objectIdPattern.test(targetPersonaId)) {
           console.error('[Tool:playWithPersona] ⛔ CRITICAL: Attempted to send mode_change with invalid personaId');
           return {
             success: false,

@@ -2,7 +2,7 @@
  * Planning System Types
  *
  * Data structures for the planning and execution system.
- * Adapted from readyplayerx, simplified for Dory.
+ * Adapted from readyplayerx, simplified for Dory AI.
  */
 
 // ─── Plan ─────────────────────────────────────────────────────────────────────

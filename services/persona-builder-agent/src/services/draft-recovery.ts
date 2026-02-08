@@ -12,18 +12,18 @@ import { getConfig } from '../config/index.js';
 import type { DraftPersona } from './session.js';
 import { getMessages, hasModeTransitionOccurred } from './session.js';
 
-// Lazy-initialized Groq client
-let groqClient: ReturnType<typeof createOpenAI> | null = null;
+// Lazy-initialized OpenAI client
+let openaiClient: ReturnType<typeof createOpenAI> | null = null;
 
-function getGroqClient() {
-  if (!groqClient) {
+function getOpenAIClient() {
+  if (!openaiClient) {
     const config = getConfig();
-    groqClient = createOpenAI({
-      apiKey: config.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1',
+    openaiClient = createOpenAI({
+      apiKey: config.OPENAI_API_KEY,
+      ...(config.OPENAI_BASE_URL && { baseURL: config.OPENAI_BASE_URL }),
     });
   }
-  return groqClient;
+  return openaiClient;
 }
 
 /**
@@ -79,7 +79,7 @@ ${conversationText}
 Return ONLY the JSON object, no other text.`;
 
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       prompt,
       temperature: 0.1, // Low temperature for structured extraction
     });

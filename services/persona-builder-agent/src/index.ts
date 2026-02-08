@@ -133,6 +133,16 @@ app.get('/api/personas/public', async (req, res) => {
 app.get('/api/personas/public/:id', async (req, res) => {
   try {
     const personaId = req.params.id as string;
+    
+    // Validate ObjectId format (24-character hexadecimal string)
+    const objectIdPattern = /^[a-fA-F0-9]{24}$/;
+    if (!objectIdPattern.test(personaId)) {
+      return res.status(400).json({ 
+        error: 'Invalid persona ID format. Expected a valid MongoDB ObjectId (24-character hexadecimal string).',
+        received: personaId
+      });
+    }
+    
     const persona = await prisma.persona.findFirst({
       where: {
         id: personaId,
@@ -239,6 +249,16 @@ app.delete('/api/personas/:id', async (req, res) => {
 app.get('/api/personas/:id/conversational-prompt', async (req, res) => {
   try {
     const personaId = req.params.id as string;
+    
+    // Validate ObjectId format (24-character hexadecimal string)
+    const objectIdPattern = /^[a-fA-F0-9]{24}$/;
+    if (!objectIdPattern.test(personaId)) {
+      return res.status(400).json({ 
+        error: 'Invalid persona ID format. Expected a valid MongoDB ObjectId (24-character hexadecimal string).',
+        received: personaId
+      });
+    }
+    
     const persona = await prisma.persona.findUnique({
       where: { id: personaId },
       select: {
@@ -295,6 +315,16 @@ app.get('/api/personas/:id/conversational-prompt', async (req, res) => {
 app.get('/api/personas/:id/gaming-prompt', async (req, res) => {
   try {
     const personaId = req.params.id as string;
+    
+    // Validate ObjectId format (24-character hexadecimal string)
+    const objectIdPattern = /^[a-fA-F0-9]{24}$/;
+    if (!objectIdPattern.test(personaId)) {
+      return res.status(400).json({ 
+        error: 'Invalid persona ID format. Expected a valid MongoDB ObjectId (24-character hexadecimal string).',
+        received: personaId
+      });
+    }
+    
     const persona = await prisma.persona.findUnique({
       where: { id: personaId },
       select: {

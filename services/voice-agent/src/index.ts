@@ -67,11 +67,15 @@ if (missing.length > 0) {
 }
 
 // Optional but warn
-const optional = ['DEEPGRAM_API_KEY', 'ELEVEN_API_KEY', 'LLM_API_KEY'];
+const optional = ['DEEPGRAM_API_KEY', 'ELEVEN_API_KEY', 'LLM_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'];
 const missingOptional = optional.filter((k) => !process.env[k]);
 if (missingOptional.length > 0) {
   console.warn(`Warning: Missing optional env vars: ${missingOptional.join(', ')}`);
   console.warn('Some features may not work without these.');
+  const hasLLMKey = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+  if (!hasLLMKey) {
+    console.warn('⚠️  Voice agent requires one of: OPENROUTER_API_KEY, LLM_API_KEY, or OPENAI_API_KEY (for GPT models)');
+  }
 }
 
 // A2A Game Agent

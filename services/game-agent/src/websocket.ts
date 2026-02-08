@@ -51,7 +51,7 @@ export function setupWebSocket(server: Server) {
     // Send welcome message
     ws.send(JSON.stringify({
       type: 'info',
-      message: 'Connected to Dory Game Agent WebSocket',
+      message: 'Connected to Dory AI Game Agent WebSocket',
       availableCommands: [
         'ask <sessionId> <message...> - Send message to AI (reasoning + tools)',
         'follow <sessionId>',

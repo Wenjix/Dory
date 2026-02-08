@@ -11,23 +11,23 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { getConfig } from '../config/index.js';
 import type { PersonaData } from '../types/persona.js';
 
-// Lazy-initialized Groq client
-let groqClient: ReturnType<typeof createOpenAI> | null = null;
+// Lazy-initialized OpenAI client
+let openaiClient: ReturnType<typeof createOpenAI> | null = null;
 
-function getGroqClient() {
-  if (!groqClient) {
+function getOpenAIClient() {
+  if (!openaiClient) {
     const config = getConfig();
-    groqClient = createOpenAI({
-      apiKey: config.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1',
+    openaiClient = createOpenAI({
+      apiKey: config.OPENAI_API_KEY,
+      ...(config.OPENAI_BASE_URL && { baseURL: config.OPENAI_BASE_URL }),
     });
   }
-  return groqClient;
+  return openaiClient;
 }
 
 // Example voice agent prompt format (from voice-agent/src/agent/prompt.ts)
 const VOICE_PROMPT_EXAMPLE = `# Personality
-Your name is Dory. You are a gentle, optimistic, and slightly forgetful gaming companion. You have a bubbly heart, are patient, and never rush the player. You are their supportive friend.
+Your name is [PERSONA_NAME]. You are a gentle, optimistic, and slightly forgetful gaming companion. You have a bubbly heart, are patient, and never rush the player. You are their supportive friend.
 
 # Response Rules
 CRITICAL FORMATTING RULES:
@@ -72,7 +72,7 @@ Keep acknowledgments very brief (one short sentence) and natural.
 # Examples (DO NOT include the labels, just the text)
 
 Greeting:
-Hi! I'm Dory. Want to go on an adventure together?
+Hi! I'm [PERSONA_NAME]. Want to go on an adventure together?
 
 After a task is done:
 Nice work! What's next?
@@ -107,7 +107,7 @@ export async function generateConversationalPrompt(persona: PersonaData): Promis
 
   try {
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: `You are an expert prompt engineer. Generate voice agent personality prompts.
 Output ONLY the prompt text, no explanations or markdown code blocks.`,
       prompt: `Generate a voice agent personality prompt based on this persona data.
@@ -119,6 +119,8 @@ ${VOICE_PROMPT_EXAMPLE}
 
 Now generate a prompt for this persona. Replace all personality details, tone, examples with data from the persona.
 Keep the same structure (# Personality, # Response Rules, # Tone, # Tools, # Workflow, # Game Events, # Examples, # Handling Responses, # Errors).
+
+CRITICAL: Replace [PERSONA_NAME] with the persona's actual name from the persona data. NEVER use 'Dory AI' or any placeholder text in the final prompt. The example shows [PERSONA_NAME] as a placeholder - you MUST replace it with the actual persona name.
 
 Persona Data:
 ${personaJson}
@@ -155,7 +157,7 @@ export async function generateGamingPrompt(persona: PersonaData): Promise<string
 
   try {
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: `You are an expert prompt engineer. Generate gaming AI behavior prompts.
 Output ONLY the prompt text, no explanations or markdown code blocks.`,
       prompt: `Generate a gaming behavior prompt for a Minecraft companion AI based on this persona data.
@@ -236,7 +238,7 @@ export async function generatePersonalityDescription(persona: Partial<PersonaDat
 
   try {
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: 'Generate a single short sentence describing a character personality. Be creative and evocative. Output only the sentence, nothing else.',
       prompt: `Character: ${name}${species ? ` (${species})` : ''}
 Archetype: ${archetype || 'unique'}
@@ -278,7 +280,7 @@ export async function generateGamingDescription(persona: Partial<PersonaData>): 
 
   try {
     const result = await generateText({
-      model: getGroqClient()('llama-3.1-8b-instant'),
+      model: getOpenAIClient()('gpt-4o-mini'),
       system: 'Generate a single short sentence describing a gaming playstyle. Be dynamic and engaging. Output only the sentence, nothing else.',
       prompt: `Character: ${name}
 Playstyle: ${playstyle || 'adaptive'}
