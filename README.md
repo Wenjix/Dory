@@ -1,9 +1,26 @@
 # Dory — AI Gaming Companion for Minecraft
 
-> **Let AI companions superpower your players' experience.**
-> Integrate an AI game companion with voice, memory, and in-game agency — in just a few steps.
+<p align="center">
+  <img src="img/doryyy.png" alt="Dory" width="200" />
+</p>
 
-Built for **Global AI Game Hack 2026**.
+<p align="center">
+  <strong>Let AI companions superpower your players' experience.</strong><br />
+  Integrate an AI game companion with voice, memory, and in-game agency — in just a few steps.
+</p>
+
+<p align="center">
+  Built for <strong>Global AI Game Hack 2026</strong>
+</p>
+
+---
+
+### Submission Video
+
+<!-- TODO: Replace with actual YouTube link -->
+[![Watch the Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube)](https://youtube.com/watch?v=YOUR_VIDEO_ID)
+
+> The submission video was produced using **Higgsfield** for AI-generated visuals, **CapCut** for editing, and real gameplay interactions captured live from Dory.
 
 ---
 
@@ -16,7 +33,6 @@ Under the hood, Dory is a **two-agent system** connected by a lightweight Agent-
 ### Key Features
 
 - **Voice Conversation** — Talk naturally using your microphone. Dory listens (Deepgram STT), thinks (LLM), and speaks back (ElevenLabs TTS) in real time via LiveKit.
-- **Custom Personas** — Create unique AI companions with distinct personalities, voice, and gaming style via the Persona Builder. The voice agent loads the persona's prompt and custom ElevenLabs voice automatically.
 - **In-Game Actions** — Follow players, collect resources, craft items, manage inventory, fight mobs, and navigate the world using 30+ tool-calling capabilities.
 - **Multi-Step Planning** — Complex requests like *"gather wood, craft planks, and make me a crafting table"* are automatically broken into a plan and executed step by step.
 - **AI Structure Generation** — Say *"build me a medieval castle"* and watch it materialize block by block. An LLM generates JavaScript build code, a sandbox executes it, and blocks are placed progressively in the live world.
@@ -33,26 +49,38 @@ Under the hood, Dory is a **two-agent system** connected by a lightweight Agent-
   Player  <───────────────────────────────────>  Voice Agent
   (Mic + Speaker)                                  (Port 4001)
                                                       │
-                                         ┌────────────┼────────────┐
-                                         │ HTTP                    │ HTTP
-                                         ▼                         ▼
-                                    Persona Builder           Game Agent
-                                    (Port 4003)               (Port 3000)
-                                         │                         │
-                                         ▼                 ┌───────┼───────┐
-                                      MongoDB              ▼       ▼       ▼
-                                                        Tools   Planning   Memory
-                                                           │                 │
-                                                           ▼                 ▼
-                                                    Minecraft Server      MongoDB
+                                                      │  HTTP / A2A Protocol
+                                                      ▼
+                                                  Game Agent
+                                                  (Port 3000)
+                                                      │
+                                              ┌───────┼───────┐
+                                              ▼       ▼       ▼
+                                           Tools   Planning   Memory
+                                              │                 │
+                                              ▼                 ▼
+                                       Minecraft Server      MongoDB
 ```
 
 | Service | Port | Role |
 |---------|------|------|
-| **Voice Agent** | 4001 | LiveKit voice pipeline (VAD → STT → LLM → TTS), persona loading, custom voice, game-event narration, conversation memory sync |
-| **Persona Builder** | 4003 | Persona creation (identity, personality, voice, avatar). Serves persona prompts + voiceId to the voice agent |
+| **Voice Agent** | 4001 | LiveKit voice pipeline (VAD → STT → LLM → TTS), game-event narration, conversation memory sync |
 | **Game Agent** | 3000 | Minecraft bot control via mineflayer, LLM reasoning with tool calling, multi-step planning, AI structure generation, persistent memory |
 | **Shared** | — | Common types, logger, utilities (`@dory/shared`) |
+
+### Reasoning Engine
+
+When a player makes a complex request, the game agent's reasoning engine decomposes it into a step-by-step plan and executes each step sequentially:
+
+<p align="center">
+  <img src="img/Reasoning-Engine-Output.png" alt="Reasoning Engine Output" width="500" />
+</p>
+
+If a step fails (e.g., missing materials), the engine **re-plans** automatically — adapting the approach based on what actually happened:
+
+<p align="center">
+  <img src="img/Smart-replanning_v2.png" alt="Smart Replanning" width="600" />
+</p>
 
 ---
 
@@ -133,9 +161,6 @@ LLM_MODEL=gpt-4o-mini
 
 # Game Agent URL (A2A connection)
 GAME_AGENT_URL=http://localhost:3000
-
-# Persona Builder (optional — enables custom persona loading)
-PERSONA_BUILDER_URL=http://localhost:4003
 ```
 
 > **Tip — Budget-friendly voice LLM:** You can use Groq with Qwen for the voice agent's LLM at no cost:
@@ -207,8 +232,6 @@ pnpm dev:voice   # Voice agent only (port 4001)
 | Capability | Description |
 |------------|-------------|
 | Voice pipeline | Silero VAD → Deepgram Nova 3 STT → LLM → ElevenLabs TTS |
-| Custom personas | Load persona personality + custom ElevenLabs voiceId from persona-builder |
-| Conversation handoff | Accept conversation summary from previous agent for continuity |
 | Real-time events | Critical game events (death, low health) interrupt Dory mid-sentence |
 | Event narration | High/medium events injected into LLM context before each turn |
 | Memory sync | Conversation history sent to game agent every 60s for preference extraction |
@@ -230,6 +253,12 @@ pnpm dev:voice   # Voice agent only (port 4001)
 
 ### Memory System
 
+Dory builds a persistent profile of each player over time — remembering preferences, goals, and shared history across sessions.
+
+<p align="center">
+  <img src="img/memory-ui.png" alt="Memory Dashboard" width="700" />
+</p>
+
 | Type | What it stores |
 |------|---------------|
 | **Episodic** | Events — deaths, tasks, structures built, combat encounters |
@@ -250,6 +279,43 @@ The builder module generates Minecraft structures from natural language:
 7. On completion, a critical event fires and Dory announces *"Your structure is finished!"*
 
 Supports cancellation mid-build (*"stop building"*), hollow/walkable interiors, and validates all blocks against a comprehensive block ID list.
+
+---
+
+## Testing Tools
+
+During development, several browser-based tools are available for testing without the voice pipeline:
+
+<details>
+<summary><strong>Game Agent Test Console</strong> — <code>services/game-agent/test-console.html</code></summary>
+
+<br />
+
+A WebSocket-based console for directly interacting with the game agent. Create sessions, send commands, inspect inventory, and test all bot actions via text.
+
+<p align="center">
+  <img src="img/testing-console.png" alt="Test Console" width="700" />
+</p>
+
+</details>
+
+<details>
+<summary><strong>Memory Dashboard</strong> — <code>services/game-agent/test-memory.html</code></summary>
+
+<br />
+
+Real-time view of stored memories, player profile, session summaries, and system context. Auto-refreshes every 5 seconds.
+
+</details>
+
+<details>
+<summary><strong>Voice Test Page</strong> — <code>services/voice-agent/test-voice.html</code></summary>
+
+<br />
+
+Connect to a LiveKit room and talk to Dory directly from the browser. Generates a room token automatically.
+
+</details>
 
 ---
 
@@ -284,10 +350,9 @@ dory/
     │
     └── voice-agent/            # @dory/voice-agent
         └── src/
-            ├── agent/          # LiveKit conversational agent, prompt, persona-prompt-builder
-            ├── clients/        # Persona client (fetches persona data + voiceId)
+            ├── agent/          # LiveKit conversational agent + personality prompt
             ├── events/         # Event store + fetcher (polls game events)
-            ├── routes/         # Room token generation (supports personaId)
+            ├── routes/         # Room token generation
             ├── services/       # Context service (memory sync)
             ├── tools/          # HTTP tools for game agent control
             └── utils/          # Logger
@@ -358,7 +423,7 @@ dory/
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `POST` | `/api/room-token` | Generate LiveKit room token. Optional body: `{ personaId, conversationSummary }` |
+| `POST` | `/api/room-token` | Generate LiveKit room token |
 | `POST` | `/api/events` | Receive game events from game agent |
 | `GET` | `/api/events` | Poll unannounced events (used by agent worker) |
 | `POST` | `/api/events/ack` | Mark events as announced |
@@ -419,7 +484,7 @@ Dory's architecture is designed to be modular and extensible:
 
 - **Add new tools** — Define a tool in `tools/registry.ts`, implement it in `tools/executor.ts`. The LLM discovers tools automatically via function calling.
 - **Swap LLM providers** — Change `LLM_PROVIDER` in `.env`. OpenAI, Anthropic, and Mistral work out of the box. Add new providers by implementing the `LLMProvider` interface.
-- **Change the voice** — Swap `TTS_VOICE_ID` in the voice agent config, pass a `personaId` to `/api/room-token` to use a persona's custom voice, or replace ElevenLabs with another TTS provider.
+- **Change the voice** — Swap `TTS_VOICE_ID` in the voice agent config, or replace ElevenLabs with another TTS provider.
 - **Replace the game** — The A2A protocol is game-agnostic. Replace the mineflayer bot with any game's API and the voice agent still works.
 - **Add memory types** — Extend the memory system with new document types in `memory/types.ts`.
 
