@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { ArrowLeft, ArrowDown, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowDown, ChevronDown, ChevronUp, Sparkles, Hammer, Gamepad2 } from 'lucide-react'
 import { useUnifiedAgent } from '@/contexts/UnifiedAgentContext'
 import { scColors } from '@/theme'
 import { SessionExitModal } from '@/components'
@@ -649,6 +649,23 @@ const GatekeeperChatInner: React.FC<GatekeeperChatProps> = ({ onLoginClick, init
     handleSendMessage("I'm not sure, please surprise me")
   }, [handleSendMessage])
 
+  // Handle mode button clicks on the landing view (before chat is expanded)
+  const handleLandingModeClick = useCallback((clickedMode: ChatMode) => {
+    if (isChatActive) return // Only active on landing view
+
+    const modeMessages: Record<ChatMode, string> = {
+      'landing': 'Hi there!',
+      'gatekeeper': 'Hi there!',
+      'persona-builder': 'Hi! I want to create a new persona!',
+      'gaming-agent': 'Hi! I want to play!',
+    }
+
+    const message = modeMessages[clickedMode]
+    if (message) {
+      handleSendMessage(message)
+    }
+  }, [isChatActive, handleSendMessage])
+
   // Reset suggestions collapsed state when mode changes
   useEffect(() => {
     setSuggestionsCollapsed(false)
@@ -826,6 +843,24 @@ const GatekeeperChatInner: React.FC<GatekeeperChatProps> = ({ onLoginClick, init
             </S.ScrollToBottomButton>
           )}
 
+          {/* Landing suggestions - only show before chat is expanded */}
+          {!isChatActive && (
+            <S.LandingSuggestions>
+              <S.LandingSuggestionChip
+                type="button"
+                onClick={() => handleSendMessage('Hi! I want to create a new persona!')}
+              >
+                <Hammer /> Create New Persona
+              </S.LandingSuggestionChip>
+              <S.LandingSuggestionChip
+                type="button"
+                onClick={() => handleSendMessage('Hi! I want to play!')}
+              >
+                <Gamepad2 /> Lets Play!
+              </S.LandingSuggestionChip>
+            </S.LandingSuggestions>
+          )}
+
           <S.GlassCard $expanded={isChatActive} $isPersonaBuilder={isPersonaBuilder}>
             {/* Quick Reply Suggestions - only show when chat is active and suggestions are ready */}
             {isChatActive && suggestionsReady && suggestions.length > 0 && (
@@ -877,7 +912,8 @@ const GatekeeperChatInner: React.FC<GatekeeperChatProps> = ({ onLoginClick, init
               isLoading={isLoading}
               mode={mode}
               placeholder={config.inputPlaceholder}
-              disableModeSelector={true}
+              disableModeSelector={isChatActive}
+              onModeChange={handleLandingModeClick}
               accentColor={isPersonaBuilder ? scColors.purple.base : undefined}
             />
           </S.GlassCard>
