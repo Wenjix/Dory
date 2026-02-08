@@ -605,46 +605,11 @@ const GatekeeperChatInner: React.FC<GatekeeperChatProps> = ({ onLoginClick, init
     setShowExitModal(true)
   }, [])
 
-  // Confirm exit - reset session and return to landing
-  const handleConfirmExit = useCallback(async () => {
-    console.log('[GatekeeperChat] User confirmed session exit (intentional reset)')
-    setShowExitModal(false)
-
-    // Cancel any pending save timer to prevent writing stale data
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = null
-    }
-
-    // Clear local UI state FIRST to prevent stale data from being picked up
-    setMessages([])
-    setInputValue('')
-    setIsLoading(false)
-    setIsChatActive(false)
-    setIsTransitioning(false)
-    setIsModeChanging(false)
-    setShowScrollButton(false)
-    setSuggestionsCollapsed(false)
-    setSuggestionsReady(false)
-    setCurrentOperation(null)
-    setPendingBackAction(null)
-    setPreviousMode('landing')
-
-    // Clear chat history for current session (intentional reset - start fresh)
-    if (stateMachine) {
-      const sessionId = stateMachine.getState().sessionId
-      if (sessionId) {
-        clearChatHistory(sessionId)
-        console.log('[GatekeeperChat] Cleared chat history for session:', sessionId)
-      }
-    }
-
-    // Reset entire session - disconnects all agents, clears all sessionIds,
-    // clears conversation summary, creates fresh GATEKEEPER session
-    await resetSession()
-
-    console.log('[GatekeeperChat] Session reset complete, returned to landing')
-  }, [resetSession, stateMachine])
+  // Confirm exit - full page reload to cleanly kill all open sessions
+  const handleConfirmExit = useCallback(() => {
+    console.log('[GatekeeperChat] User confirmed session exit — reloading page to clean all sessions')
+    window.location.reload()
+  }, [])
 
   // Cancel exit - stay in current session
   const handleCancelExit = useCallback(() => {
@@ -819,7 +784,7 @@ const GatekeeperChatInner: React.FC<GatekeeperChatProps> = ({ onLoginClick, init
           </S.HeroTitle>
           
           <S.HeroSubtitle>
-            Your gateway to infinite possibilities. Create, explore, and bring your imagination to life.
+            Your gateway to infinite possibilities. Create, explore, and bring your favourite characters to life.
           </S.HeroSubtitle>
         </S.HeroContent>
       </S.HeroSection>
