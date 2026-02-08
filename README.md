@@ -90,7 +90,7 @@ If a step fails (e.g., missing materials), the engine **re-plans** automatically
 | **Node.js 20+** | Runtime for both services |
 | **pnpm 8+** | `npm install -g pnpm` |
 | **Docker** | For local MongoDB (memory system) |
-| **Minecraft Java Edition** | Server running locally or remotely (1.20+) |
+| **Minecraft Java Edition 1.20.4** | Singleplayer world opened to LAN, or a dedicated server |
 | **LiveKit Cloud** | Free account at [livekit.io](https://livekit.io) |
 | **API Keys** | LLM provider, Deepgram (STT), ElevenLabs (TTS) |
 
@@ -201,11 +201,19 @@ pnpm dev:game    # Game agent only (port 3000)
 pnpm dev:voice   # Voice agent only (port 4001)
 ```
 
-### 5. Connect and play
+### 5. Start Minecraft
 
-1. **Start your Minecraft server** — Java Edition, offline mode recommended for local testing.
+Dory is built for **Minecraft Java Edition 1.20.4**. To set up a local server:
 
-2. **Open the voice test page** at `services/voice-agent/test-voice.html` in your browser and click Connect.
+1. Launch Minecraft Java Edition **1.20.4** and create a new **Singleplayer** world with **Allow Cheats: ON** (under "More World Options" or the game rules toggle).
+2. Once in the world, press **Esc** to open the pause menu.
+3. Click **"Open to LAN"**.
+4. Set the port to **25565** (default) and click **Start LAN World**.
+> Your world is now a local server on `localhost:25565` that Dory can connect to. Cheats being enabled allows the bot to use `/setblock` and `/fill` commands for AI structure generation.
+
+### 6. Connect and play
+
+1. **Open the voice test page** at `services/voice-agent/test-voice.html` in your browser and click Connect.
 
 3. **Talk to Dory:**
    - *"Join the game"* — connects the bot to Minecraft
@@ -220,7 +228,7 @@ pnpm dev:voice   # Voice agent only (port 4001)
    - **WebSocket** — connect to `ws://localhost:3000/ws` for a raw command interface
    - **Memory dashboard** — open `services/game-agent/test-memory.html` to inspect stored memories, summaries, and player profile in real time
 
-> **Important for AI structure generation:** The bot must have operator permissions in the Minecraft server. Run `/op <bot_username>` in the server console before asking Dory to generate structures.
+> **Tip:** If AI structure generation isn't working, make sure the world was created with **Cheats: ON**. The bot needs cheats enabled to place blocks via commands.
 
 ---
 
@@ -458,7 +466,7 @@ pnpm dev             # Then retry
 
 ### AI structure generation fails
 
-- Make sure the bot has operator permissions: run `/op <bot_username>` in the Minecraft server console
+- Make sure the world was created with **Cheats: ON** — the bot uses `/setblock` and `/fill` commands which require cheats
 - If using GPT-5 or o-series models, the provider automatically uses `max_completion_tokens` instead of `max_tokens`
 - Check that `OPENAI_API_KEY` is set (required even if your main LLM provider is Mistral/Anthropic, if you use OpenAI for the builder)
 
