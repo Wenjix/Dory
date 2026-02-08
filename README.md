@@ -17,8 +17,7 @@
 
 ### Submission Video
 
-<!-- TODO: Replace with actual YouTube link -->
-[![Watch the Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube)](https://youtube.com/watch?v=YOUR_VIDEO_ID)
+[![Watch the Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube)](https://youtu.be/T9jMcPh7U_A)
 
 > The submission video was produced using **Higgsfield** for AI-generated visuals, **CapCut** for editing, and real gameplay interactions captured live from Dory.
 
