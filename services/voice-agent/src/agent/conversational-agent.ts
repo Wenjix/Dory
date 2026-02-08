@@ -25,6 +25,96 @@ import {
   fetchSystemContext,
   notifySessionEnd,
 } from '../services/context-service.js';
+import { personaClient, type PersonaInfo } from '../clients/persona-client.js';
+
+// ============================================================================
+// System Prompt Building
+// ============================================================================
+
+/**
+ * Build system prompt with optional persona injection, conversation context,
+ * and memory enrichment from the game agent.
+ *
+ * @param userId - User ID for memory enrichment
+ * @param personaId - Optional persona ID to fetch and inject personality
+ * @param conversationSummary - Optional summary from previous agent conversation
+ * @returns Complete system prompt string and optional persona info
+ */
+async function buildSystemPrompt(
+  userId: string,
+  personaId?: string,
+  conversationSummary?: string
+): Promise<{ prompt: string; personaInfo?: PersonaInfo }> {
+  let systemPrompt = VOICE_INSTRUCTIONS;
+  let personaInfo: PersonaInfo | undefined;
+
+  // If personaId is provided, fetch persona and inject personality
+  if (personaId) {
+    try {
+      console.log(`[Agent] Fetching persona: ${personaId}`);
+      const result = await personaClient.getPersonaSystemPrompt(personaId);
+
+      if (result) {
+        systemPrompt = result.prompt;
+        personaInfo = result.personaInfo;
+        console.log(`[Agent] Injected persona: ${personaInfo.name} (voiceId: ${personaInfo.voiceId || 'NOT SET'})`);
+      } else {
+        console.warn(`[Agent] Persona ${personaId} not found, using default prompt`);
+      }
+    } catch (error) {
+      console.error(`[Agent] Failed to fetch persona ${personaId}:`, error);
+      console.warn(`[Agent] Falling back to default prompt`);
+    }
+  } else {
+    console.log(`[Agent] No personaId provided, using default prompt`);
+  }
+
+  // Inject conversation context if provided (from previous agent)
+  if (conversationSummary) {
+    systemPrompt += `
+
+# Previous Conversation Context
+
+${conversationSummary}
+
+**Important**: The user had a conversation before connecting to you. Use this context to:
+- Continue the conversation naturally without repeating information
+- Reference previous topics if relevant
+- Maintain continuity in the interaction
+- Don't explicitly mention "the previous conversation" unless natural
+
+Pick up where they left off smoothly.`;
+
+    console.log(`[Agent] Injected conversation context (${conversationSummary.length} chars)`);
+  }
+
+  // Try to fetch memory context for additional personalization
+  try {
+    const memoryContext = await fetchSystemContext(userId);
+    if (memoryContext && memoryContext !== 'No previous memory data for this user.') {
+      systemPrompt += `\n\n# Background Memory (subtle — DO NOT recite)
+You have vague memories from previous sessions with this player. Use them ONLY to:
+- Occasionally reference shared history ("Oh yeah, we built that castle before!" or "You like jungle wood, right?")
+- Adapt your tone if you know the player's style
+- Avoid re-asking things you already know
+
+Rules:
+- Do NOT list what you remember. Never say "I remember that you like X and Y and Z."
+- Do NOT bring up memories unprompted every turn — sprinkle them in naturally, maybe once every few exchanges.
+- If the memory doesn't fit the conversation, just ignore it.
+- Keep it casual — like a friend who just happens to remember, not a database readout.
+
+${memoryContext}`;
+      console.log(`[Agent] Enriched prompt with memory context (${memoryContext.length} chars)`);
+    } else {
+      console.log('[Agent] No memory context available (new user or game agent not running)');
+    }
+  } catch {
+    console.log('[Agent] Could not fetch memory context');
+  }
+
+  return { prompt: systemPrompt, personaInfo };
+}
 
 // ============================================================================
 // Game-Aware Agent (extends voice.Agent with event injection)
@@ -228,9 +318,29 @@ export default defineAgent({
 
     // Connect to the room FIRST (before anything else)
     await ctx.connect();
-    console.log(`🎮 Agent session started: ${sessionId}`);
 
-    // ── Duplicate agent guard (from readyplayerx) ─────────────────────────
+    // ── Parse metadata (personaId, conversationSummary) ──────────────────
+    let personaId: string | undefined;
+    let conversationSummary: string | undefined;
+    try {
+      const jobMeta = JSON.parse(ctx.job.metadata || '{}');
+      const roomMeta = JSON.parse(ctx.room.metadata || '{}');
+      const meta = { ...roomMeta, ...jobMeta }; // job metadata takes priority
+
+      personaId = meta.personaId;
+      conversationSummary = meta.conversationSummary;
+
+      if (personaId) {
+        console.log(`[Agent] Persona requested: ${personaId}`);
+      }
+      if (conversationSummary) {
+        console.log(`[Agent] Conversation context received (${conversationSummary.length} chars)`);
+      }
+    } catch {}
+
+    console.log(`🎮 Agent session started: ${sessionId} (persona: ${personaId || 'default'})`);
+
+    // ── Duplicate agent guard ─────────────────────────────────────────────
     const participants = Array.from(ctx.room.remoteParticipants.values());
     const existingAgents = participants.filter(
       (p) => p.identity?.includes('agent') || (p as any).kind === 'AGENT'
@@ -269,6 +379,22 @@ export default defineAgent({
       apiKey: process.env.ELEVEN_API_KEY,
     });
 
+    // ── Build system prompt with persona + memory enrichment ─────────────
+    const userId = 'user-123';
+    console.log(`[Agent] Building system prompt (personaId: ${personaId || 'none'})`);
+    const { prompt: systemPrompt, personaInfo } = await buildSystemPrompt(
+      userId, personaId, conversationSummary
+    );
+
+    // ── Apply persona voiceId if available ────────────────────────────────
+    if (personaInfo?.voiceId) {
+      console.log(`[Agent] Applying persona voiceId: ${personaInfo.voiceId}`);
+      tts.updateOptions({ voiceId: personaInfo.voiceId });
+      console.log(`[Agent] Voice updated to: ${personaInfo.voiceId}`);
+    } else if (personaId) {
+      console.log(`[Agent] No voiceId available for persona, using default voice`);
+    }
+
     // ── Agent Session (voice pipeline) ────────────────────────────────────
     const session = new voice.AgentSession({
       llm: llm as any,
@@ -280,43 +406,12 @@ export default defineAgent({
       },
     });
 
-    // ── Memory: fetch user profile for prompt enrichment ─────────────────
-    // Use bot name as userId (matches what bot-manager uses)
-    const userId = 'Dory'; // Default — matches bot-manager setup
-    let enrichedInstructions = VOICE_INSTRUCTIONS;
-
-    try {
-      const memoryContext = await fetchSystemContext(userId);
-      if (memoryContext && memoryContext !== 'No previous memory data for this user.') {
-        enrichedInstructions =
-          VOICE_INSTRUCTIONS +
-          `\n\n# Background Memory (subtle — DO NOT recite)
-You have vague memories from previous sessions with this player. Use them ONLY to:
-- Occasionally reference shared history ("Oh yeah, we built that castle before!" or "You like jungle wood, right?")
-- Adapt your tone if you know the player's style
-- Avoid re-asking things you already know
-
-Rules:
-- Do NOT list what you remember. Never say "I remember that you like X and Y and Z."
-- Do NOT bring up memories unprompted every turn — sprinkle them in naturally, maybe once every few exchanges.
-- If the memory doesn't fit the conversation, just ignore it.
-- Keep it casual — like a friend who just happens to remember, not a database readout.
-
-${memoryContext}`;
-        console.log(`[Agent] Enriched prompt with memory context (${memoryContext.length} chars)`);
-      } else {
-        console.log('[Agent] No memory context available (new user or game agent not running)');
-      }
-    } catch {
-      console.log('[Agent] Could not fetch memory context, using base prompt');
-    }
-
     // ── Agent with game event injection ──────────────────────────────────
     const toolNames = Object.keys(gameTools);
     console.log(`[Agent] Tools (${toolNames.length}): [${toolNames.join(', ')}]`);
 
     const agent = new GameAwareAgent({
-      instructions: enrichedInstructions,
+      instructions: systemPrompt,
       llm: llm as any,
       tools: gameTools,
     });
@@ -370,7 +465,7 @@ ${memoryContext}`;
     console.log(`[Agent] Conversation sync started (every ${SYNC_INTERVAL_MS / 1000}s)`);
 
     // ── Shutdown ──────────────────────────────────────────────────────────
-    ctx.addShutdownCallback(() => {
+    ctx.addShutdownCallback(async () => {
       console.log(`[Agent] Session ending: ${sessionId}`);
       for (const cb of shutdownCallbacks) {
         try {

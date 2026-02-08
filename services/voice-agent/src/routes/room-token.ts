@@ -19,7 +19,9 @@ export function createRoomTokenRouter(): Router {
    *
    * Body:
    *   - roomName: string (optional, auto-generated if missing)
-   *   - identity: string (optional, defaults to "user-<uuid>")
+   *   - identity: string (optional, defaults to "user-123")
+   *   - personaId: string (optional, persona to load for the voice agent)
+   *   - conversationSummary: string (optional, summary from previous agent)
    *
    * Response:
    *   - token: string (LiveKit access token)
@@ -30,7 +32,8 @@ export function createRoomTokenRouter(): Router {
   router.post('/', async (req: Request, res: Response) => {
     try {
       const roomName = req.body.roomName || `dory-${uuidv4().slice(0, 8)}`;
-      const identity = req.body.identity || `user-${uuidv4().slice(0, 8)}`;
+      const identity = req.body.identity || 'user-123';
+      const { personaId, conversationSummary } = req.body;
 
       const apiKey = process.env.LIVEKIT_API_KEY;
       const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -57,6 +60,15 @@ export function createRoomTokenRouter(): Router {
       };
       at.addGrant(grant);
 
+      // Build dispatch metadata with persona and conversation context
+      const dispatchMetadata: Record<string, string> = {};
+      if (personaId && typeof personaId === 'string') {
+        dispatchMetadata.personaId = personaId;
+      }
+      if (conversationSummary && typeof conversationSummary === 'string') {
+        dispatchMetadata.conversationSummary = conversationSummary;
+      }
+
       // Explicit agent dispatch — when this participant connects,
       // LiveKit will dispatch the 'dory-voice' agent to the room.
       // This is more reliable than automatic dispatch (avoids race conditions).
@@ -64,13 +76,16 @@ export function createRoomTokenRouter(): Router {
         agents: [
           new RoomAgentDispatch({
             agentName: 'dory-voice',
+            metadata: Object.keys(dispatchMetadata).length > 0
+              ? JSON.stringify(dispatchMetadata)
+              : '',
           }),
         ],
       });
 
       const token = await at.toJwt();
 
-      console.log(`[RoomToken] Generated token for ${identity} in room ${roomName}`);
+      console.log(`[RoomToken] Generated token for ${identity} in room ${roomName}${personaId ? `, persona: ${personaId}` : ''}`);
 
       return res.json({
         token,
