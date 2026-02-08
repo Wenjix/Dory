@@ -221,18 +221,23 @@ function startCriticalEventPoller(
       // Always acknowledge criticals so they don't pile up
       await acknowledgeEvents(['critical']);
 
+      // Pick the most important message: prefer death > structure complete > low health > damage
+      const deathEvent = criticals.find((e) => e.message.includes('died'));
+      const structureEvent = criticals.find((e) => e.message.includes('structure is finished'));
+      const urgentMsg = deathEvent
+        ? deathEvent.message
+        : structureEvent
+          ? structureEvent.message
+          : criticals[criticals.length - 1].message; // latest event
+
       // Check cooldown — skip the interrupt if we just spoke
+      // EXCEPTION: death and structure completion events ALWAYS break through the cooldown
       const now = Date.now();
-      if (now - lastInterruptTime < CRITICAL_COOLDOWN_MS) {
+      const bypassCooldown = !!deathEvent || !!structureEvent;
+      if (!bypassCooldown && now - lastInterruptTime < CRITICAL_COOLDOWN_MS) {
         console.log(`[Agent] 🚨 Critical events acknowledged but skipping interrupt (cooldown ${Math.round((CRITICAL_COOLDOWN_MS - (now - lastInterruptTime)) / 1000)}s remaining)`);
         return;
       }
-
-      // Pick the most important message: prefer death > low health > damage
-      const deathEvent = criticals.find((e) => e.message.includes('died'));
-      const urgentMsg = deathEvent
-        ? deathEvent.message
-        : criticals[criticals.length - 1].message; // latest event
 
       console.log(`[Agent] 🚨 CRITICAL EVENT — interrupting: ${urgentMsg}`);
       lastInterruptTime = now;

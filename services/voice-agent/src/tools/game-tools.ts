@@ -69,15 +69,15 @@ const connectBot = llm.tool({
   parameters: z.object({
     botName: z
       .string()
-      .optional()
+      .nullish()
       .describe('Name for the bot. Defaults to "DoryBot".'),
     serverHost: z
       .string()
-      .optional()
+      .nullish()
       .describe('Minecraft server host. Defaults to "localhost".'),
     serverPort: z
       .number()
-      .optional()
+      .nullish()
       .describe('Minecraft server port. Defaults to 25565.'),
   }),
   execute: async ({ botName, serverHost, serverPort }) => {
