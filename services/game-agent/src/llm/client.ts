@@ -24,6 +24,7 @@ const DEFAULT_MODELS: Record<LLMProviderType, string> = {
   mistral: 'mistral-large-latest',
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-20250514',
+  gemini: 'gemini-2.5-pro',
 };
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -70,6 +71,9 @@ export function createLLMClient(overrides?: Partial<LLMProviderConfig> & { provi
     case 'openai':
       provider = new OpenAICompatibleProvider('openai', config);
       break;
+    case 'gemini':
+      provider = new OpenAICompatibleProvider('gemini', config);
+      break;
     case 'anthropic':
       provider = new AnthropicProvider(config);
       break;
@@ -91,6 +95,8 @@ function getApiKeyFromEnv(provider: LLMProviderType): string | undefined {
       return process.env.OPENAI_API_KEY;
     case 'anthropic':
       return process.env.ANTHROPIC_API_KEY;
+    case 'gemini':
+      return process.env.GEMINI_API_KEY;
   }
 }
 
@@ -103,6 +109,8 @@ function getModelFromEnv(provider: LLMProviderType): string | undefined {
       return process.env.OPENAI_MODEL || process.env.LLM_MODEL;
     case 'anthropic':
       return process.env.ANTHROPIC_MODEL || process.env.LLM_MODEL;
+    case 'gemini':
+      return process.env.GEMINI_MODEL || process.env.LLM_MODEL;
   }
 }
 
@@ -114,5 +122,7 @@ function getEnvKeyName(provider: LLMProviderType): string {
       return 'OPENAI_API_KEY';
     case 'anthropic':
       return 'ANTHROPIC_API_KEY';
+    case 'gemini':
+      return 'GEMINI_API_KEY';
   }
 }
