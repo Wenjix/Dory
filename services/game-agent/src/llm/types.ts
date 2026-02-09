@@ -50,7 +50,7 @@ export interface CompletionResponse {
 
 // ─── Provider Interface ───────────────────────────────────────────────────────
 
-export type LLMProviderType = 'mistral' | 'openai' | 'anthropic';
+export type LLMProviderType = 'mistral' | 'openai' | 'anthropic' | 'gemini';
 
 export interface LLMProviderConfig {
   apiKey: string;

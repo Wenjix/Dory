@@ -24,6 +24,7 @@ const logger = createLogger('llm-openai-compat');
 const DEFAULT_BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
   mistral: 'https://api.mistral.ai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
 };
 
 export class OpenAICompatibleProvider implements LLMProvider {
